@@ -12,6 +12,20 @@ export function formatCurrency(amount: number | string): string {
   }).format(Number(amount));
 }
 
+/**
+ * Discount % from original (compare) and sale price, matching backend:
+ * (compare - sale) / compare * 100, rounded down to int. Use API fields when possible.
+ */
+export function productDiscountPercentFromPrices(
+  salePrice: number | string | null | undefined,
+  compareAt: number | string | null | undefined
+): number {
+  const sale = Number(salePrice);
+  const cmp = compareAt != null && compareAt !== "" ? Number(compareAt) : NaN;
+  if (!Number.isFinite(sale) || !Number.isFinite(cmp) || cmp <= sale) return 0;
+  return Math.round(((cmp - sale) / cmp) * 100);
+}
+
 export function formatDate(dateString: string): string {
   return new Date(dateString).toLocaleDateString("en-AU", {
     day: "numeric",

@@ -10,6 +10,7 @@ from .views import (
     AdminVariantViewSet,
     CategoryDetailView,
     CategoryListView,
+    DealsProductsView,
     FeaturedProductsView,
     ProductDetailView,
     ProductListView,
@@ -31,6 +32,7 @@ urlpatterns = [
     # Public
     path("", ProductListView.as_view(), name="product-list"),
     path("featured/", FeaturedProductsView.as_view(), name="featured-products"),
+    path("deals/", DealsProductsView.as_view(), name="product-deals"),
     path("categories/", CategoryListView.as_view(), name="category-list"),
     path("categories/<slug:slug>/", CategoryDetailView.as_view(), name="category-detail"),
     path("<slug:slug>/", ProductDetailView.as_view(), name="product-detail"),

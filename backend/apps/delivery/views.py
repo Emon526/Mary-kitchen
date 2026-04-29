@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
-from core.permissions import IsAdminUser
+from core.permissions import ADMIN_API_PERMISSION_CLASSES
 
 from .models import DeliveryZone
 from .serializers import DeliveryFeeRequestSerializer, DeliveryZoneSerializer
@@ -35,5 +35,5 @@ class DeliveryFeeView(APIView):
 class AdminDeliveryZoneViewSet(ModelViewSet):
     """Admin CRUD for delivery zones."""
     serializer_class = DeliveryZoneSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = ADMIN_API_PERMISSION_CLASSES
     queryset = DeliveryZone.objects.all()

@@ -15,8 +15,13 @@ interface ProductCardProps {
     name: string;
     slug: string;
     base_price: string;
-    compare_price?: string;
-    discount_percentage: number;
+    compare_price?: string | null;
+    /** From API; should match compare/original formula */
+    discount_percentage?: number;
+    /** List API: preferred sale price (product or best variant deal) */
+    sale_price?: string | number | null;
+    /** List API: strikethrough "was" price when on sale */
+    compare_at_price?: string | number | null;
     average_rating: number;
     review_count: number;
     is_in_stock: boolean;
@@ -30,6 +35,16 @@ export default function ProductCard({ product }: ProductCardProps) {
   const { cart, addItem, updateItem, removeItem } = useCartStore();
   const { isAuthenticated } = useAuthStore();
   const [busy, setBusy] = useState(false);
+
+  const saleDisplay = product.sale_price ?? product.base_price;
+  const compareDisplay =
+    product.compare_at_price != null && product.compare_at_price !== ""
+      ? product.compare_at_price
+      : null;
+  const discountPct =
+    product.discount_percentage != null && Number(product.discount_percentage) > 0
+      ? Math.round(Number(product.discount_percentage))
+      : 0;
 
   const cartItem = cart?.items?.find((i) => i.product === product.id && !i.variant);
   const qty = cartItem?.quantity ?? 0;
@@ -100,9 +115,9 @@ export default function ProductCard({ product }: ProductCardProps) {
         ) : (
           <div className="w-full h-full flex items-center justify-center text-5xl text-gray-300">🛒</div>
         )}
-        {product.discount_percentage > 0 && (
+        {discountPct > 0 && (
           <span className="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-            -{product.discount_percentage}%
+            -{discountPct}%
           </span>
         )}
         {!product.is_in_stock && (
@@ -137,9 +152,9 @@ export default function ProductCard({ product }: ProductCardProps) {
         {/* Price + Cart controls */}
         <div className="flex items-center justify-between mt-auto gap-2">
           <div className="min-w-0">
-            <span className="font-bold text-primary-700">{formatCurrency(product.base_price)}</span>
-            {product.compare_price && (
-              <span className="text-xs text-gray-400 line-through ml-1">{formatCurrency(product.compare_price)}</span>
+            <span className="font-bold text-primary-700">{formatCurrency(saleDisplay)}</span>
+            {discountPct > 0 && compareDisplay != null && compareDisplay !== "" && (
+              <span className="text-xs text-gray-400 line-through ml-1">{formatCurrency(compareDisplay)}</span>
             )}
             <span className="text-xs text-gray-400 ml-1">/{product.unit}</span>
           </div>

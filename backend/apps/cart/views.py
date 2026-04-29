@@ -15,6 +15,49 @@ def get_or_create_cart(user) -> Cart:
     return cart
 
 
+def validate_cart_items(cart: Cart) -> dict:
+    """
+    Validate every item in the cart against current product/stock state.
+    Returns {'valid_items': [...], 'invalid_items': [...], 'can_checkout': bool}.
+    """
+    valid_items = []
+    invalid_items = []
+
+    for item in cart.items.select_related("product", "variant"):
+        product = item.product
+        variant = item.variant
+        reason = None
+
+        if not product.is_active:
+            reason = "Product is no longer available"
+        elif variant and not variant.is_active:
+            reason = "This variant is no longer available"
+        else:
+            stock_obj = variant if variant else product
+            available = stock_obj.stock_quantity
+            if available == 0:
+                reason = "Out of stock"
+            elif available < item.quantity:
+                reason = f"Only {available} left in stock"
+
+        entry = {
+            "id": str(item.id),
+            "product_id": str(product.id),
+            "product_name": product.name,
+            "quantity": item.quantity,
+        }
+        if reason:
+            invalid_items.append({**entry, "reason": reason})
+        else:
+            valid_items.append(entry)
+
+    return {
+        "valid_items": valid_items,
+        "invalid_items": invalid_items,
+        "can_checkout": len(valid_items) > 0,
+    }
+
+
 class CartView(APIView):
     """GET /api/v1/cart/ – retrieve the current user's cart."""
     permission_classes = [IsAuthenticated]
@@ -23,6 +66,16 @@ class CartView(APIView):
         cart = get_or_create_cart(request.user)
         serializer = CartSerializer(cart, context={"request": request})
         return Response({"success": True, "data": serializer.data})
+
+
+class CartValidateView(APIView):
+    """GET /api/v1/cart/validate/ – check every cart item for availability."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        cart = get_or_create_cart(request.user)
+        result = validate_cart_items(cart)
+        return Response({"success": True, **result})
 
 
 class AddToCartView(APIView):

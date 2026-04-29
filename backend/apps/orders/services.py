@@ -36,6 +36,12 @@ def create_order_from_cart(user, order_type: str, address_id=None, notes: str = 
         except Address.DoesNotExist:
             raise ValueError("Address not found.")
 
+        if not (address.latitude and address.longitude):
+            raise ValueError(
+                "Delivery address must include a valid location. "
+                "Please re-save your address using the address search so we can calculate your delivery fee."
+            )
+
         delivery_address_snapshot = {
             "label": address.label,
             "full_name": address.full_name,
@@ -48,16 +54,15 @@ def create_order_from_cart(user, order_type: str, address_id=None, notes: str = 
             "country": address.country,
         }
 
-        if address.latitude and address.longitude:
-            subtotal_estimate = cart.subtotal
-            fee_result = get_delivery_fee(
-                float(address.latitude), float(address.longitude), subtotal_estimate
-            )
-            if not fee_result.get("available", True):
-                raise ValueError(fee_result.get("reason", "Delivery not available to this address."))
-            delivery_fee = fee_result.get("fee", Decimal("0.00"))
-            zone_name = fee_result.get("zone_name", "")
-            distance_km = fee_result.get("distance_km")
+        subtotal_estimate = cart.subtotal
+        fee_result = get_delivery_fee(
+            float(address.latitude), float(address.longitude), subtotal_estimate
+        )
+        if not fee_result.get("available", True):
+            raise ValueError(fee_result.get("reason", "Delivery not available to this address."))
+        delivery_fee = fee_result.get("fee", Decimal("0.00"))
+        zone_name = fee_result.get("zone_name", "")
+        distance_km = fee_result.get("distance_km")
 
     order = Order.objects.create(
         user=user,
@@ -72,9 +77,17 @@ def create_order_from_cart(user, order_type: str, address_id=None, notes: str = 
     )
 
     has_oos = False
+    excluded_names = []
+
     for item in cart.items.select_related("product", "variant"):
         product = item.product
         variant = item.variant
+
+        # Skip inactive or deleted products — never order unavailable items
+        if not product.is_active or (variant and not variant.is_active):
+            excluded_names.append(product.name)
+            continue
+
         unit_price = variant.price if variant else product.base_price
         oos = False
 
@@ -97,16 +110,27 @@ def create_order_from_cart(user, order_type: str, address_id=None, notes: str = 
             was_out_of_stock=oos,
         )
 
+    # If every item was excluded/inactive, abort and rollback
+    if not order.items.exists():
+        raise ValueError(
+            "All items in your cart are currently unavailable. "
+            "Please remove them and add available products."
+        )
+
     order.has_out_of_stock_items = has_oos
     order.calculate_totals()
 
     cart.clear()
 
+    note = "Order created"
+    if excluded_names:
+        note += f" ({len(excluded_names)} unavailable item(s) excluded: {', '.join(excluded_names)})"
+
     OrderStatusHistory.objects.create(
         order=order,
         from_status="",
         to_status="pending",
-        note="Order created",
+        note=note,
     )
 
     if has_oos:

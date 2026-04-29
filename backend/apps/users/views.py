@@ -1,6 +1,8 @@
 """User app views."""
+from axes.handlers.proxy import AxesProxyHandler
+from axes.helpers import get_client_ip_address, get_credentials, get_lockout_message
 from django.contrib.auth import get_user_model
-from rest_framework import generics, status
+from rest_framework import generics, serializers, status
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -9,7 +11,8 @@ from rest_framework.viewsets import ModelViewSet
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from core.permissions import IsAdminUser, IsOwnerOrAdmin
+from core.otp_rate_limit import consume_otp_request_slot
+from core.permissions import ADMIN_API_PERMISSION_CLASSES, IsOwnerOrAdmin
 
 from .models import Address, User, Wishlist, WishlistItem
 from .serializers import (
@@ -48,12 +51,44 @@ class RegisterView(generics.CreateAPIView):
 
 class LoginView(APIView):
     """POST /api/v1/auth/login/"""
+
     permission_classes = [AllowAny]
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.validated_data["user"]
+        email = serializer.validated_data["email"]
+        password = serializer.validated_data["password"]
+
+        # Resolve client IP the same way Axes does (see AxesProxyHandler.update_request).
+        _ = get_client_ip_address(request)
+
+        credentials = get_credentials(username=email, password=password)
+
+        if not AxesProxyHandler.is_allowed(request, credentials):
+            return Response(
+                {"success": False, "message": get_lockout_message()},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            user = UserModel.objects.get(email=email)
+        except UserModel.DoesNotExist:
+            user = None
+
+        if user is None or not user.is_active or not user.check_password(password):
+            AxesProxyHandler.user_login_failed(
+                sender=__name__,
+                credentials=credentials,
+                request=request,
+            )
+            return Response(
+                {"success": False, "message": "Invalid email or password."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        AxesProxyHandler.user_logged_in(sender=user.__class__, request=request, user=user)
+
         refresh = RefreshToken.for_user(user)
         return Response(
             {
@@ -90,6 +125,13 @@ class OTPRequestView(APIView):
     def post(self, request):
         serializer = OTPRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data["email"]
+        allowed, rate_msg = consume_otp_request_slot(request, email)
+        if not allowed:
+            return Response(
+                {"success": False, "message": rate_msg},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
         send_otp(**serializer.validated_data)
         return Response({"success": True, "message": "OTP sent to your email."})
 
@@ -102,26 +144,56 @@ class OTPVerifyView(APIView):
         serializer = OTPVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         d = serializer.validated_data
-        success, message = verify_otp(d["email"], d["code"], d["purpose"])
+        email = d["email"]
+        credentials = get_credentials(username=email)
+
+        _ = get_client_ip_address(request)
+
+        if not AxesProxyHandler.is_allowed(request, credentials):
+            return Response(
+                {"error": "Too many failed attempts. Try again later."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        success, message = verify_otp(email, d["code"], d["purpose"])
 
         if not success:
+            AxesProxyHandler.user_login_failed(
+                sender=__name__,
+                credentials=credentials,
+                request=request,
+            )
             return Response({"success": False, "message": message}, status=status.HTTP_400_BAD_REQUEST)
 
         response_data = {"success": True, "message": message}
 
         if d["purpose"] == "email_verify":
-            User.objects.filter(email=d["email"]).update(is_email_verified=True)
+            User.objects.filter(email=email).update(is_email_verified=True)
         elif d["purpose"] == "otp_login":
             try:
-                user = User.objects.get(email=d["email"])
-                refresh = RefreshToken.for_user(user)
-                response_data["tokens"] = {
-                    "refresh": str(refresh),
-                    "access": str(refresh.access_token),
-                }
-                response_data["user"] = UserProfileSerializer(user).data
+                user = User.objects.get(email=email)
             except User.DoesNotExist:
+                AxesProxyHandler.user_login_failed(
+                    sender=__name__,
+                    credentials=credentials,
+                    request=request,
+                )
                 return Response({"success": False, "message": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+            if not user.is_active:
+                return Response(
+                    {"success": False, "message": "Account is disabled."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            AxesProxyHandler.user_logged_in(sender=user.__class__, request=request, user=user)
+
+            refresh = RefreshToken.for_user(user)
+            response_data["tokens"] = {
+                "refresh": str(refresh),
+                "access": str(refresh.access_token),
+            }
+            response_data["user"] = UserProfileSerializer(user).data
 
         return Response(response_data)
 
@@ -131,9 +203,21 @@ class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        email = request.data.get("email")
-        if not email:
+        raw_email = request.data.get("email")
+        if raw_email is None or str(raw_email).strip() == "":
             return Response({"success": False, "message": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            email = serializers.EmailField().run_validation(raw_email)
+        except serializers.ValidationError:
+            return Response({"success": False, "message": "Enter a valid email address."}, status=status.HTTP_400_BAD_REQUEST)
+
+        allowed, rate_msg = consume_otp_request_slot(request, email)
+        if not allowed:
+            return Response(
+                {"success": False, "message": rate_msg},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
         if User.objects.filter(email=email).exists():
             send_otp(email, "password_reset")
         return Response({"success": True, "message": "If this email exists, a reset code has been sent."})
@@ -230,7 +314,7 @@ class WishlistItemView(APIView):
 class AdminUserListView(generics.ListAPIView):
     """Admin: list all users."""
     serializer_class = AdminUserSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = ADMIN_API_PERMISSION_CLASSES
     queryset = User.objects.all().order_by("-date_joined")
     search_fields = ["email", "first_name", "last_name", "phone_number"]
     filterset_fields = ["is_active", "is_staff", "is_email_verified"]
@@ -239,5 +323,5 @@ class AdminUserListView(generics.ListAPIView):
 class AdminUserDetailView(generics.RetrieveUpdateAPIView):
     """Admin: view/update user."""
     serializer_class = AdminUserSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = ADMIN_API_PERMISSION_CLASSES
     queryset = User.objects.all()

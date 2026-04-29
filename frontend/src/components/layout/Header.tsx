@@ -1,5 +1,6 @@
 "use client";
-import { useState, useEffect } from "react";
+import Image from "next/image";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCartStore } from "@/store/cartStore";
@@ -7,6 +8,16 @@ import { useAuthStore } from "@/store/authStore";
 import { ShoppingCart, User, Search, Menu, X, ShoppingBag, Bell, LogOut, Package } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
+import { formatCurrency } from "@/lib/utils";
+
+type ProductSuggestion = {
+  id: string;
+  name: string;
+  slug: string;
+  base_price: string | number;
+  sale_price?: string | number | null;
+  primary_image?: string | null;
+};
 
 export default function Header() {
   const router = useRouter();
@@ -15,6 +26,10 @@ export default function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [suggestions, setSuggestions] = useState<ProductSuggestion[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const searchRef = useRef<HTMLFormElement>(null);
 
   const { data: unreadCount } = useQuery({
     queryKey: ["unread-notifications"],
@@ -27,12 +42,64 @@ export default function Header() {
     if (isAuthenticated) fetchCart();
   }, [isAuthenticated]);
 
+  useEffect(() => {
+    const query = search.trim();
+
+    if (query.length < 2) {
+      setSuggestions([]);
+      setShowDropdown(false);
+      return;
+    }
+
+    let active = true;
+    const delay = window.setTimeout(async () => {
+      try {
+        setLoadingSuggestions(true);
+        const res = await api.get(`/products/?search=${encodeURIComponent(query)}&limit=5`);
+        const results = res.data.results || res.data || [];
+
+        if (active) {
+          setSuggestions(results.slice(0, 5));
+          setShowDropdown(true);
+        }
+      } catch (err) {
+        console.error(err);
+        if (active) setSuggestions([]);
+      } finally {
+        if (active) setLoadingSuggestions(false);
+      }
+    }, 300);
+
+    return () => {
+      active = false;
+      window.clearTimeout(delay);
+    };
+  }, [search]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!searchRef.current?.contains(event.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+
+    window.addEventListener("click", handleClickOutside);
+    return () => window.removeEventListener("click", handleClickOutside);
+  }, []);
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (search.trim()) {
       router.push(`/products?search=${encodeURIComponent(search)}`);
       setSearch("");
+      setShowDropdown(false);
     }
+  };
+
+  const handleSuggestionClick = (item: ProductSuggestion) => {
+    router.push(`/products/${item.slug}`);
+    setSearch("");
+    setShowDropdown(false);
   };
 
   const handleLogout = async () => {
@@ -54,11 +121,14 @@ export default function Header() {
           </Link>
 
           {/* Search */}
-          <form onSubmit={handleSearch} className="flex-1 max-w-2xl">
+          <form ref={searchRef} onSubmit={handleSearch} className="relative flex-1 max-w-2xl">
             <div className="flex">
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                onFocus={() => {
+                  if (search.trim().length >= 2 && suggestions.length > 0) setShowDropdown(true);
+                }}
                 placeholder="Search groceries, fish, meat..."
                 className="flex-1 px-4 py-2 text-gray-900 rounded-l-lg text-sm focus:outline-none"
               />
@@ -66,6 +136,46 @@ export default function Header() {
                 <Search className="w-4 h-4" />
               </button>
             </div>
+            {showDropdown && (suggestions.length > 0 || loadingSuggestions) && (
+              <div className="absolute left-0 top-full mt-1 w-full overflow-hidden rounded-xl bg-white text-gray-800 shadow-xl border border-gray-100 z-50">
+                {loadingSuggestions && suggestions.length === 0 ? (
+                  <div className="px-4 py-3 text-sm text-gray-500">Searching...</div>
+                ) : (
+                  suggestions.map((item) => {
+                    const price = item.sale_price ?? item.base_price;
+
+                    return (
+                      <button
+                        type="button"
+                        key={item.id}
+                        onClick={() => handleSuggestionClick(item)}
+                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50"
+                      >
+                        <div className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-md bg-gray-100">
+                          {item.primary_image ? (
+                            <Image src={item.primary_image} alt={item.name} fill className="object-cover" sizes="40px" />
+                          ) : (
+                            <ShoppingBag className="m-2 h-6 w-6 text-gray-300" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-gray-900">{item.name}</p>
+                          <p className="text-xs font-semibold text-primary-700">{formatCurrency(price)}</p>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+                {search.trim().length >= 2 && (
+                  <button
+                    type="submit"
+                    className="w-full border-t border-gray-100 px-4 py-2.5 text-left text-sm font-semibold text-primary-700 hover:bg-primary-50"
+                  >
+                    View all results for "{search.trim()}"
+                  </button>
+                )}
+              </div>
+            )}
           </form>
 
           {/* Actions */}
@@ -147,7 +257,7 @@ export default function Header() {
               { label: "Vegetables", href: "/products?category=vegetables" },
               { label: "Rice & Grains", href: "/products?category=rice-grains" },
               { label: "Oil & Condiments", href: "/products?category=oil-condiments" },
-              { label: "Deals", href: "/products?is_featured=true" },
+              { label: "Deals", href: "/products/deals" },
             ].map((item) => (
               <Link
                 key={item.href}

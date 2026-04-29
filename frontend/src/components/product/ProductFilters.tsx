@@ -3,7 +3,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 
-export default function ProductFilters() {
+type ProductFiltersProps = {
+  /** Base path for filter navigation (e.g. `/products` or `/products/deals`). */
+  basePath?: string;
+};
+
+export default function ProductFilters({ basePath = "/products" }: ProductFiltersProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -12,12 +17,14 @@ export default function ProductFilters() {
     queryFn: () => api.get("/products/categories/").then((r) => r.data),
   });
 
+  const categoryRows = categories?.results ?? categories ?? [];
+
   const updateFilter = (key: string, value: string | null) => {
     const params = new URLSearchParams(searchParams.toString());
     if (value) params.set(key, value);
     else params.delete(key);
     params.delete("page");
-    router.push(`/products?${params.toString()}`);
+    router.push(`${basePath}?${params.toString()}`);
   };
 
   const current = (key: string) => searchParams.get(key) || "";
@@ -34,7 +41,7 @@ export default function ProductFilters() {
             <input type="radio" name="category" checked={!current("category")} onChange={() => updateFilter("category", null)} className="text-primary-600" />
             <span>All Categories</span>
           </label>
-          {categories?.results?.map((cat: any) => (
+          {categoryRows.map((cat: any) => (
             <label key={cat.id} className="flex items-center gap-2 cursor-pointer">
               <input type="radio" name="category" value={cat.slug} checked={current("category") === cat.slug} onChange={() => updateFilter("category", cat.slug)} className="text-primary-600" />
               <span>{cat.name}</span>
@@ -89,7 +96,7 @@ export default function ProductFilters() {
       </div>
 
       {/* Clear */}
-      <button onClick={() => router.push("/products")} className="text-xs text-primary-700 hover:underline">
+      <button onClick={() => router.push(basePath)} className="text-xs text-primary-700 hover:underline">
         Clear all filters
       </button>
     </div>

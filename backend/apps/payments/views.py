@@ -8,6 +8,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from core.permissions import ADMIN_API_PERMISSION_CLASSES
 from apps.orders.models import Order
 
 from .models import Payment
@@ -80,11 +81,9 @@ class PaymentListView(APIView):
 
 class RefundView(APIView):
     """POST /api/v1/payments/refund/ – admin-initiated refund."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = ADMIN_API_PERMISSION_CLASSES
 
     def post(self, request):
-        if not request.user.is_staff:
-            return Response({"success": False, "message": "Admin only."}, status=status.HTTP_403_FORBIDDEN)
         order_number = request.data.get("order_number")
         reason = request.data.get("reason", "")
         try:

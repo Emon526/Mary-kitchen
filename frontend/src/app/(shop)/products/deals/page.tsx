@@ -2,14 +2,15 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import api from "@/lib/api";
 import ProductCard from "@/components/product/ProductCard";
 import ProductFilters from "@/components/product/ProductFilters";
 import CategoryFilterSelect from "@/components/product/CategoryFilterSelect";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { Search, SlidersHorizontal } from "lucide-react";
+import { Search, SlidersHorizontal, Tag } from "lucide-react";
 
-export default function ProductsPage() {
+export default function DealsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [showFilters, setShowFilters] = useState(false);
@@ -26,7 +27,6 @@ export default function ProductsPage() {
     queryKey: ["categories"],
     queryFn: () => api.get("/products/categories/").then((r) => r.data),
   });
-
   const categoryRows = categoriesData?.results ?? categoriesData ?? [];
   const activeCategoryName = useMemo(() => {
     if (!categorySlug) return null;
@@ -34,9 +34,20 @@ export default function ProductsPage() {
     return row?.name ?? null;
   }, [categorySlug, categoryRows]);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["products", params.toString()],
-    queryFn: () => api.get(`/products/?${params.toString()}`).then((r) => r.data),
+  const qs = params.toString();
+  const dealsUrl = qs ? `/products/deals/?${qs}` : "/products/deals/";
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["products-deals", qs],
+    queryFn: async () => {
+      const r = await api.get(dealsUrl);
+      const body = r.data;
+      if (process.env.NODE_ENV === "development") {
+        // eslint-disable-next-line no-console
+        console.debug("[/products/deals/]", { count: body?.count, page: body?.current_page, results: body?.results?.length });
+      }
+      return body;
+    },
   });
 
   const handleSearch = (e: React.FormEvent) => {
@@ -45,13 +56,13 @@ export default function ProductsPage() {
     if (search) newParams.set("search", search);
     else newParams.delete("search");
     newParams.delete("page");
-    router.push(`/products?${newParams.toString()}`);
+    router.push(`/products/deals?${newParams.toString()}`);
   };
 
   const handlePageChange = (page: number) => {
     const newParams = new URLSearchParams(searchParams.toString());
     newParams.set("page", String(page));
-    router.push(`/products?${newParams.toString()}`);
+    router.push(`/products/deals?${newParams.toString()}`);
   };
 
   const setCategoryFilter = (slug: string) => {
@@ -59,11 +70,27 @@ export default function ProductsPage() {
     if (slug) newParams.set("category", slug);
     else newParams.delete("category");
     newParams.delete("page");
-    router.push(`/products?${newParams.toString()}`);
+    router.push(`/products/deals?${newParams.toString()}`);
   };
 
   return (
     <div className="container-xl py-8">
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
+        <div>
+          <div className="flex items-center gap-2 text-red-600 mb-1">
+            <Tag className="w-5 h-5" />
+            <span className="text-sm font-semibold uppercase tracking-wide">Special offers</span>
+          </div>
+          <h1 className="section-title">Deals</h1>
+          <p className="text-sm text-gray-600 mt-1 max-w-xl">
+            Products with an active discount — compare at the crossed-out price, pay the sale price.
+          </p>
+        </div>
+        <Link href="/products" className="text-sm text-primary-700 hover:underline font-medium self-start sm:self-auto">
+          Browse all products
+        </Link>
+      </div>
+
       <div className="flex flex-col sm:flex-row gap-4 mb-6">
         <form onSubmit={handleSearch} className="flex-1 flex gap-2 flex-wrap sm:flex-nowrap">
           <div className="relative flex-1 min-w-[200px]">
@@ -71,7 +98,7 @@ export default function ProductsPage() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search products..."
+              placeholder="Search deals..."
               className="input-field pl-10"
             />
           </div>
@@ -85,31 +112,36 @@ export default function ProductsPage() {
         </form>
         <button
           onClick={() => setShowFilters(!showFilters)}
-          className="btn-secondary flex items-center gap-2 self-start"
+          className="btn-secondary flex items-center gap-2"
         >
           <SlidersHorizontal className="w-4 h-4" />
           Filters
         </button>
       </div>
 
-      {activeCategoryName && (
-        <p className="text-sm font-medium text-gray-800 mb-4">
-          Showing: <span className="text-primary-700">{activeCategoryName}</span>
-        </p>
-      )}
-
       <div className="flex gap-6">
         {showFilters && (
           <div className="w-64 flex-shrink-0">
-            <ProductFilters />
+            <ProductFilters basePath="/products/deals" />
           </div>
         )}
 
         <div className="flex-1">
+          {activeCategoryName && (
+            <p className="text-sm font-medium text-gray-800 mb-3">
+              Showing: <span className="text-primary-700">{activeCategoryName}</span>
+            </p>
+          )}
           {data && (
             <p className="text-sm text-gray-500 mb-4">
-              {data.count} product{data.count !== 1 ? "s" : ""} found
+              {data.count} deal{data.count !== 1 ? "s" : ""} available
             </p>
+          )}
+
+          {error && (
+            <div className="rounded-xl border border-red-200 bg-red-50 text-red-800 text-sm px-4 py-3 mb-4">
+              Could not load deals. Check that the API is running and <code className="text-xs">NEXT_PUBLIC_API_URL</code> points to <code className="text-xs">…/api/v1</code>.
+            </div>
           )}
 
           {isLoading ? (
@@ -120,9 +152,10 @@ export default function ProductsPage() {
             </div>
           ) : data?.results?.length === 0 ? (
             <div className="text-center py-20 text-gray-400">
-              <Search className="w-12 h-12 mx-auto mb-4 opacity-40" />
-              <p className="text-lg font-medium">No products found</p>
-              <p className="text-sm">Try adjusting your filters</p>
+              <Tag className="w-12 h-12 mx-auto mb-4 opacity-40" />
+              <p className="text-lg font-medium">No deals right now</p>
+              <p className="text-sm">Check back soon — or browse all products.</p>
+              <Link href="/products" className="btn-primary inline-flex mt-6">All products</Link>
             </div>
           ) : (
             <>

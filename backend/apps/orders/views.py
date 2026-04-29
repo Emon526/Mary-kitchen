@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core.permissions import IsAdminUser, IsOwnerOrAdmin
+from core.permissions import ADMIN_API_PERMISSION_CLASSES, IsOwnerOrAdmin
 
 from .models import Order
 from .serializers import (
@@ -94,7 +94,7 @@ class CancelOrderView(APIView):
 class AdminOrderListView(generics.ListAPIView):
     """Admin: list all orders with filters."""
     serializer_class = AdminOrderSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = ADMIN_API_PERMISSION_CLASSES
     search_fields = ["order_number", "user__email"]
     filterset_fields = ["status", "order_type", "payment_status", "has_out_of_stock_items"]
     ordering_fields = ["created_at", "total_amount"]
@@ -111,14 +111,14 @@ class AdminOrderListView(generics.ListAPIView):
 class AdminOrderDetailView(generics.RetrieveUpdateAPIView):
     """Admin: view/edit an order."""
     serializer_class = AdminOrderSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = ADMIN_API_PERMISSION_CLASSES
     queryset = Order.objects.all().prefetch_related("items", "status_history")
     lookup_field = "order_number"
 
 
 class AdminOrderStatusUpdateView(APIView):
     """POST /api/v1/orders/admin/<order_number>/status/"""
-    permission_classes = [IsAdminUser]
+    permission_classes = ADMIN_API_PERMISSION_CLASSES
 
     def post(self, request, order_number):
         try:

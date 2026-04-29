@@ -1,10 +1,10 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import api from "@/lib/api";
-import { ArrowLeft, Loader2, Plus, X } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, X, ImagePlus, Trash2 } from "lucide-react";
 import Link from "next/link";
 
 export default function NewProductPage() {
@@ -14,6 +14,12 @@ export default function NewProductPage() {
   const [showCatModal, setShowCatModal] = useState(false);
   const [catForm, setCatForm] = useState({ name: "", description: "" });
   const [catLoading, setCatLoading] = useState(false);
+
+  // Image state
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [form, setForm] = useState({
     name: "",
     description: "",
@@ -34,6 +40,32 @@ export default function NewProductPage() {
     queryFn: () => api.get("/products/admin/categories/").then((r) => r.data.results ?? r.data),
   });
 
+  const handleImageChange = (file: File) => {
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  const handleFileDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith("image/")) handleImageChange(file);
+  };
+
+  const removeImage = () => {
+    setImageFile(null);
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImagePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  // Parse backend custom exception format: { errors:[{field,message}], message }
+  const parseApiError = (err: any, fallback: string): string => {
+    const data = err?.response?.data;
+    if (data?.errors?.[0]?.message) return data.errors[0].message;
+    if (data?.message) return data.message;
+    return fallback;
+  };
+
   const handleCreateCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!catForm.name.trim()) { toast.error("Category name is required"); return; }
@@ -46,7 +78,7 @@ export default function NewProductPage() {
       setShowCatModal(false);
       setCatForm({ name: "", description: "" });
     } catch (err: any) {
-      toast.error(err?.response?.data?.name?.[0] || "Failed to create category");
+      toast.error(parseApiError(err, "Failed to create category"));
     } finally {
       setCatLoading(false);
     }
@@ -65,7 +97,8 @@ export default function NewProductPage() {
     }
     setLoading(true);
     try {
-      await api.post("/products/admin/products/", {
+      // Step 1 — create the product
+      const { data: product } = await api.post("/products/admin/products/", {
         name: form.name,
         description: form.description,
         category: form.category,
@@ -79,11 +112,27 @@ export default function NewProductPage() {
         is_featured: form.is_featured,
         tags: form.tags || "",
       });
+
+      // Step 2 — upload image if one was selected
+      if (imageFile && product?.id) {
+        const fd = new FormData();
+        fd.append("image", imageFile);
+        fd.append("is_primary", "true");
+        fd.append("alt_text", form.name);
+        try {
+          await api.post(`/products/admin/products/${product.id}/images/`, fd, {
+            headers: { "Content-Type": "multipart/form-data" },
+          });
+        } catch {
+          toast.error("Product created, but image upload failed. You can add it from the edit page.");
+        }
+      }
+
       toast.success("Product created!");
+      qc.invalidateQueries({ queryKey: ["admin-products"] });
       router.push("/admin/products");
     } catch (err: any) {
-      const msg = err?.response?.data?.detail || err?.response?.data?.name?.[0] || "Failed to create product";
-      toast.error(msg);
+      toast.error(parseApiError(err, "Failed to create product"));
     } finally {
       setLoading(false);
     }
@@ -99,6 +148,46 @@ export default function NewProductPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
+
+        {/* Product Image */}
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3">
+          <h3 className="font-semibold text-gray-800">Product Image</h3>
+          {imagePreview ? (
+            <div className="relative w-40 h-40 rounded-xl overflow-hidden border border-gray-200 group">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+              <button
+                type="button"
+                onClick={removeImage}
+                className="absolute top-1.5 right-1.5 p-1 bg-red-500 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={handleFileDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className="flex flex-col items-center justify-center gap-2 w-full h-36 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-primary-400 hover:bg-primary-50 transition-colors"
+            >
+              <ImagePlus className="w-8 h-8 text-gray-400" />
+              <p className="text-sm text-gray-500 font-medium">Click or drag & drop an image</p>
+              <p className="text-xs text-gray-400">PNG, JPG, WEBP — max 5MB</p>
+            </div>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleImageChange(file);
+            }}
+          />
+        </div>
+
         {/* Basic Info */}
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-4">
           <h3 className="font-semibold text-gray-800">Basic Information</h3>

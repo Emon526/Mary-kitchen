@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import api from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
+import ConfirmModal from "@/components/admin/ConfirmModal";
 import { Plus, Edit, Trash2, Truck } from "lucide-react";
 
 export default function AdminDeliveryPage() {
@@ -16,6 +17,7 @@ export default function AdminDeliveryPage() {
     estimated_delivery_days: "1", is_active: true,
     outside_zone_behaviour: "deny",
   });
+  const [pendingZoneDelete, setPendingZoneDelete] = useState<{ id: string; name: string } | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-delivery-zones"],
@@ -29,6 +31,16 @@ export default function AdminDeliveryPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const min = parseFloat(String(form.min_distance_km).trim());
+    const max = parseFloat(String(form.max_distance_km).trim());
+    if (Number.isNaN(min) || Number.isNaN(max)) {
+      toast.error("Min and max distance must be valid numbers");
+      return;
+    }
+    if (min >= max) {
+      toast.error("Min distance must be less than max distance");
+      return;
+    }
     try {
       if (editing) {
         await api.patch(`/delivery/admin/zones/${editing.id}/`, form);
@@ -47,18 +59,34 @@ export default function AdminDeliveryPage() {
 
   const handleEdit = (zone: any) => {
     setEditing(zone);
-    setForm({ ...zone, free_delivery_threshold: zone.free_delivery_threshold || "" });
+    setForm({
+      ...zone,
+      min_distance_km: zone.min_distance_km != null && zone.min_distance_km !== "" ? String(zone.min_distance_km) : "",
+      max_distance_km: zone.max_distance_km != null && zone.max_distance_km !== "" ? String(zone.max_distance_km) : "",
+      delivery_fee: zone.delivery_fee != null && zone.delivery_fee !== "" ? String(zone.delivery_fee) : "",
+      free_delivery_threshold: zone.free_delivery_threshold || "",
+      estimated_delivery_days: String(zone.estimated_delivery_days ?? 1),
+    });
     setShowForm(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Delete this zone?")) return;
+  const requestDeleteZone = (zone: { id: string; name: string }) =>
+    setPendingZoneDelete({ id: zone.id, name: zone.name });
+
+  const confirmDeleteZone = async () => {
+    if (!pendingZoneDelete) return;
+    const { id, name } = pendingZoneDelete;
+    setPendingZoneDelete(null);
     try {
       await api.delete(`/delivery/admin/zones/${id}/`);
       qc.invalidateQueries({ queryKey: ["admin-delivery-zones"] });
-      toast.success("Deleted");
-    } catch {
-      toast.error("Failed to delete");
+      toast.success(`"${name}" deleted`);
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        "Failed to delete";
+      toast.error(msg);
     }
   };
 
@@ -98,7 +126,7 @@ export default function AdminDeliveryPage() {
               <button onClick={() => handleEdit(zone)} className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1">
                 <Edit className="w-3 h-3" /> Edit
               </button>
-              <button onClick={() => handleDelete(zone.id)} className="text-xs text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg border border-red-200 transition-colors flex items-center gap-1">
+              <button onClick={() => requestDeleteZone(zone)} className="text-xs text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg border border-red-200 transition-colors flex items-center gap-1">
                 <Trash2 className="w-3 h-3" /> Delete
               </button>
             </div>
@@ -119,11 +147,27 @@ export default function AdminDeliveryPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Min Distance (km)</label>
-                  <input type="number" required value={form.min_distance_km} onChange={(e) => setForm({ ...form, min_distance_km: e.target.value })} className="input-field" min={0} />
+                  <input
+                    type="number"
+                    required
+                    value={form.min_distance_km}
+                    onChange={(e) => setForm({ ...form, min_distance_km: e.target.value })}
+                    className="input-field"
+                    min={0}
+                    step="0.01"
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Max Distance (km)</label>
-                  <input type="number" required value={form.max_distance_km} onChange={(e) => setForm({ ...form, max_distance_km: e.target.value })} className="input-field" min={0} />
+                  <input
+                    type="number"
+                    required
+                    value={form.max_distance_km}
+                    onChange={(e) => setForm({ ...form, max_distance_km: e.target.value })}
+                    className="input-field"
+                    min={0}
+                    step="0.01"
+                  />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -160,6 +204,16 @@ export default function AdminDeliveryPage() {
           </div>
         </div>
       )}
+      <ConfirmModal
+        open={pendingZoneDelete != null}
+        title={pendingZoneDelete ? `Delete "${pendingZoneDelete.name}"?` : ""}
+        description="This action is permanent and cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+        onConfirm={confirmDeleteZone}
+        onCancel={() => setPendingZoneDelete(null)}
+      />
     </div>
   );
 }

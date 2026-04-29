@@ -4,7 +4,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core.permissions import IsAdminUser, IsOwnerOrAdmin
+from core.permissions import ADMIN_API_PERMISSION_CLASSES, IsOwnerOrAdmin
 
 from .models import Review
 from .serializers import AdminReviewSerializer, ReviewSerializer
@@ -58,7 +58,7 @@ class MarkReviewHelpfulView(APIView):
 class AdminReviewListView(generics.ListAPIView):
     """Admin: list all reviews with moderation filters."""
     serializer_class = AdminReviewSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = ADMIN_API_PERMISSION_CLASSES
     filterset_fields = ["is_approved", "is_flagged"]
     search_fields = ["user__email", "product__name"]
 
@@ -68,7 +68,7 @@ class AdminReviewListView(generics.ListAPIView):
 
 class AdminReviewModerateView(APIView):
     """POST /api/v1/reviews/admin/<id>/moderate/"""
-    permission_classes = [IsAdminUser]
+    permission_classes = ADMIN_API_PERMISSION_CLASSES
 
     def post(self, request, pk):
         try:

@@ -26,7 +26,11 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin, BaseModel):
-    """Custom user model using email as the login identifier."""
+    """Custom user model using email as the login identifier.
+
+    Admin access for the REST API and Django admin is controlled by ``is_staff``
+    (and ``is_superuser`` for full Django superuser privileges).
+    """
     email = models.EmailField(unique=True, db_index=True)
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150)

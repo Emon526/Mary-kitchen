@@ -14,9 +14,26 @@ SECURE_HSTS_SECONDS = 31536000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 SECURE_SSL_REDIRECT = True
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+
 X_FRAME_OPTIONS = "DENY"
+
+# ─── Reverse proxy: real client IP (Axes + django-ratelimit) ─────────────────
+# Nginx / Cloudflare typically set X-Forwarded-For; fall back to REMOTE_ADDR.
+AXES_META_PRECEDENCE_ORDER = [
+    "HTTP_X_FORWARDED_FOR",
+    "REMOTE_ADDR",
+]
+AXES_VERBOSE = True
+
+RATELIMIT_IP_META_KEY = "HTTP_X_FORWARDED_FOR"
 
 # S3 Storage
 USE_S3 = config("USE_S3", default=False, cast=bool)

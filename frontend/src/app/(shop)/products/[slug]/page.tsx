@@ -6,6 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import api from "@/lib/api";
+import { absoluteMediaUrl } from "@/lib/media";
 import { useCartStore } from "@/store/cartStore";
 import { useAuthStore } from "@/store/authStore";
 import { formatCurrency, getStatusColor } from "@/lib/utils";
@@ -73,7 +74,34 @@ export default function ProductDetailPage() {
   const images = product.images || [];
   const variants = product.variants?.filter((v: any) => v.is_active) || [];
   const currentVariant = variants.find((v: any) => v.id === selectedVariant);
-  const price = currentVariant?.price ?? product.base_price;
+
+  const variantOnSale =
+    currentVariant &&
+    currentVariant.compare_price != null &&
+    Number(currentVariant.compare_price) > Number(currentVariant.price);
+  const displaySale = currentVariant
+    ? currentVariant.price
+    : product.sale_price ?? product.base_price;
+  const displayCompare = currentVariant
+    ? variantOnSale
+      ? currentVariant.compare_price
+      : null
+    : product.compare_at_price != null && String(product.compare_at_price).length > 0
+      ? product.compare_at_price
+      : null;
+  const displayDiscountPct = currentVariant
+    ? Number(currentVariant.discount_percentage) > 0
+      ? Math.round(Number(currentVariant.discount_percentage))
+      : 0
+    : Number(product.discount_percentage) > 0
+      ? Math.round(Number(product.discount_percentage))
+      : 0;
+
+  const primaryImageSrc = (idx: number) => {
+    const raw = images[idx]?.image;
+    if (!raw) return null;
+    return absoluteMediaUrl(raw) ?? raw;
+  };
 
   return (
     <div className="container-xl py-8">
@@ -94,9 +122,9 @@ export default function ProductDetailPage() {
         {/* Images */}
         <div>
           <div className="relative aspect-square rounded-2xl overflow-hidden bg-gray-100 mb-3">
-            {images[activeImage] ? (
+            {images[activeImage] && primaryImageSrc(activeImage) ? (
               <Image
-                src={images[activeImage].image}
+                src={primaryImageSrc(activeImage)!}
                 alt={images[activeImage].alt_text || product.name}
                 fill
                 className="object-cover"
@@ -109,9 +137,9 @@ export default function ProductDetailPage() {
                 <span className="bg-red-500 text-white text-sm font-bold px-4 py-2 rounded-full">Out of Stock</span>
               </div>
             )}
-            {product.discount_percentage > 0 && (
+            {displayDiscountPct > 0 && (
               <div className="absolute top-3 left-3 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                -{product.discount_percentage}%
+                -{displayDiscountPct}%
               </div>
             )}
           </div>
@@ -125,7 +153,7 @@ export default function ProductDetailPage() {
                     activeImage === i ? "border-primary-600" : "border-gray-200"
                   }`}
                 >
-                  <Image src={img.image} alt="" fill className="object-cover" />
+                  <Image src={absoluteMediaUrl(img.image) || img.image} alt="" fill className="object-cover" />
                 </button>
               ))}
             </div>
@@ -151,11 +179,13 @@ export default function ProductDetailPage() {
           </div>
 
           {/* Price */}
-          <div className="flex items-baseline gap-3 mb-4">
-            <span className="text-3xl font-bold text-primary-700">{formatCurrency(price)}</span>
-            {product.compare_price && (
-              <span className="text-lg text-gray-400 line-through">{formatCurrency(product.compare_price)}</span>
-            )}
+          <div className="flex items-baseline gap-3 mb-4 flex-wrap">
+            <span className="text-3xl font-bold text-primary-700">{formatCurrency(displaySale)}</span>
+            {displayCompare != null &&
+              displayCompare !== "" &&
+              Number(displayCompare) > Number(displaySale) && (
+                <span className="text-lg text-gray-400 line-through">{formatCurrency(displayCompare)}</span>
+              )}
             <span className="text-sm text-gray-500">/ {product.unit}</span>
           </div>
 

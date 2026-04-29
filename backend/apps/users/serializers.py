@@ -1,5 +1,4 @@
 """User app serializers."""
-from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -17,11 +16,20 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         fields = ["id", "email", "first_name", "last_name", "phone_number", "password", "password_confirm", "tokens"]
 
     def validate(self, attrs):
+        if "is_staff" in self.initial_data:
+            raise serializers.ValidationError({"is_staff": "This field cannot be set via registration."})
+        if "is_superuser" in self.initial_data:
+            raise serializers.ValidationError({"is_superuser": "This field cannot be set via registration."})
         if attrs["password"] != attrs.pop("password_confirm"):
             raise serializers.ValidationError({"password_confirm": "Passwords do not match."})
         return attrs
 
     def create(self, validated_data):
+        # Never allow privilege escalation via extra kwargs (defense in depth).
+        validated_data.pop("is_staff", None)
+        validated_data.pop("is_superuser", None)
+        validated_data.setdefault("is_staff", False)
+        validated_data.setdefault("is_superuser", False)
         user = User.objects.create_user(**validated_data)
         Wishlist.objects.create(user=user)
         return user
@@ -32,17 +40,10 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
 
 class LoginSerializer(serializers.Serializer):
+    """Validates login payload; authentication and Axes tracking happen in ``LoginView``."""
+
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
-
-    def validate(self, attrs):
-        user = authenticate(email=attrs["email"], password=attrs["password"])
-        if not user:
-            raise serializers.ValidationError("Invalid email or password.")
-        if not user.is_active:
-            raise serializers.ValidationError("Account is disabled.")
-        attrs["user"] = user
-        return attrs
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
@@ -146,7 +147,7 @@ class WishlistSerializer(serializers.ModelSerializer):
 
 
 class AdminUserSerializer(serializers.ModelSerializer):
-    """Serializer for admin user management."""
+    """Serializer for admin user management (staff may PATCH ``is_staff``)."""
     full_name = serializers.ReadOnlyField()
     order_count = serializers.SerializerMethodField()
 
@@ -157,6 +158,19 @@ class AdminUserSerializer(serializers.ModelSerializer):
             "phone_number", "is_active", "is_staff", "is_email_verified",
             "date_joined", "last_login", "order_count",
         ]
+        read_only_fields = ["id", "full_name", "order_count", "date_joined", "last_login"]
 
     def get_order_count(self, obj):
         return obj.orders.count()
+
+    def update(self, instance, validated_data):
+        request = self.context.get("request")
+        if (
+            request
+            and instance.pk == request.user.pk
+            and validated_data.get("is_staff") is False
+        ):
+            raise serializers.ValidationError(
+                {"is_staff": "You cannot remove your own admin access via this endpoint."}
+            )
+        return super().update(instance, validated_data)

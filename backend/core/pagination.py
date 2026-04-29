@@ -34,6 +34,13 @@ class StandardResultsPagination(PageNumberPagination):
         }
 
 
+class AdminResultsPagination(StandardResultsPagination):
+    """Admin lists: larger default page size, still capped by ``max_page_size``."""
+
+    page_size = 50
+    max_page_size = 100
+
+
 class LargeResultsPagination(PageNumberPagination):
     page_size = 50
     page_size_query_param = "page_size"

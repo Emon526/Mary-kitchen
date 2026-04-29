@@ -31,7 +31,7 @@ export default function AdminDashboardPage() {
   const STATS = [
     { label: "Total Orders", value: totalOrders, icon: ShoppingCart, color: "bg-blue-500", change: "+12%" },
     { label: "Total Users", value: totalUsers, icon: Users, color: "bg-green-500", change: "+8%" },
-    { label: "Products", value: totalProducts, icon: Package, color: "bg-purple-500", change: "+3%" },
+    { label: "Products", value: totalProducts, sub: "Total in catalog (all pages)", icon: Package, color: "bg-purple-500", change: "+3%" },
     { label: "Recent Revenue", value: formatCurrency(revenue), icon: DollarSign, color: "bg-brand-500", change: "+15%" },
   ];
 
@@ -41,7 +41,7 @@ export default function AdminDashboardPage() {
 
       {/* Stats cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {STATS.map(({ label, value, icon: Icon, color, change }) => (
+        {STATS.map(({ label, value, sub, icon: Icon, color, change }) => (
           <div key={label} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
             <div className="flex items-center justify-between mb-3">
               <div className={`w-10 h-10 ${color} rounded-lg flex items-center justify-center text-white`}>
@@ -53,6 +53,7 @@ export default function AdminDashboardPage() {
             </div>
             <p className="text-2xl font-bold text-gray-900">{value}</p>
             <p className="text-sm text-gray-500 mt-0.5">{label}</p>
+            {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
           </div>
         ))}
       </div>

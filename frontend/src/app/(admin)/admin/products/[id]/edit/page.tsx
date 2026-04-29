@@ -4,6 +4,7 @@ import { useRouter, useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import api from "@/lib/api";
+import ConfirmModal from "@/components/admin/ConfirmModal";
 import { ArrowLeft, Loader2, Plus, X, Upload, Trash2, Star } from "lucide-react";
 import Link from "next/link";
 
@@ -18,6 +19,7 @@ export default function EditProductPage() {
   const [showCatModal, setShowCatModal] = useState(false);
   const [catForm, setCatForm] = useState({ name: "", description: "" });
   const [catLoading, setCatLoading] = useState(false);
+  const [pendingImageDeleteId, setPendingImageDeleteId] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: "", description: "", base_price: "", compare_price: "",
     sku: "", stock_quantity: "0", category: "", is_featured: false,
@@ -121,8 +123,10 @@ export default function EditProductPage() {
     }
   };
 
-  const handleDeleteImage = async (imageId: string) => {
-    if (!confirm("Delete this image?")) return;
+  const handleDeleteImage = async () => {
+    if (!pendingImageDeleteId) return;
+    const imageId = pendingImageDeleteId;
+    setPendingImageDeleteId(null);
     try {
       await api.delete(`/products/admin/products/${id}/images/${imageId}/`);
       toast.success("Image deleted");
@@ -218,7 +222,7 @@ export default function EditProductPage() {
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                   <button
                     type="button"
-                    onClick={() => handleDeleteImage(img.id)}
+                    onClick={() => setPendingImageDeleteId(img.id)}
                     className="p-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -364,6 +368,16 @@ export default function EditProductPage() {
           </div>
         </div>
       )}
+      <ConfirmModal
+        open={pendingImageDeleteId != null}
+        title="Delete this image?"
+        description="This action is permanent and cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+        onConfirm={handleDeleteImage}
+        onCancel={() => setPendingImageDeleteId(null)}
+      />
     </div>
   );
 }
