@@ -1,4 +1,5 @@
 """Order creation and management service."""
+import logging
 from decimal import Decimal
 
 import stripe
@@ -12,6 +13,8 @@ from apps.products.models import Product, ProductVariant
 from apps.users.models import Address
 
 from .models import Order, OrderItem, OrderStatusHistory
+
+logger = logging.getLogger(__name__)
 
 
 def abandon_unpaid_pending_checkouts(user) -> None:
@@ -207,16 +210,29 @@ def update_order_status(order: Order, new_status: str, changed_by, note: str = "
         order_status_notification_title,
     )
 
-    Notification.objects.create(
-        user=order.user,
-        title=order_status_notification_title(new_status),
-        message=order_status_notification_message(order.order_number, new_status),
-        notification_type="order_update",
-        action_url=f"/orders/{order.order_number}",
-        metadata={"order_number": order.order_number, "status": new_status},
-    )
+    try:
+        Notification.objects.create(
+            user=order.user,
+            title=order_status_notification_title(new_status),
+            message=order_status_notification_message(order.order_number, new_status),
+            notification_type="order_update",
+            action_url=f"/orders/{order.order_number}",
+            metadata={"order_number": order.order_number, "status": new_status},
+        )
+    except Exception:
+        logger.exception(
+            "update_order_status: failed to create in-app notification for order %s",
+            order.order_number,
+        )
 
-    from apps.notifications.tasks import send_order_status_update_email
-    send_order_status_update_email.delay(str(order.id), new_status)
+    try:
+        from apps.notifications.tasks import send_order_status_update_email
+
+        send_order_status_update_email.delay(str(order.id), new_status)
+    except Exception:
+        logger.exception(
+            "update_order_status: failed to queue status email for order %s",
+            order.order_number,
+        )
 
     return order

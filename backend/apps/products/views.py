@@ -178,6 +178,44 @@ class AdminProductViewSet(ModelViewSet):
             )
 
 
+class AdminLowStockProductsView(APIView):
+    """GET /api/v1/products/admin/low-stock/ – products with zero/low stock."""
+
+    permission_classes = ADMIN_API_PERMISSION_CLASSES
+
+    def get(self, request):
+        try:
+            threshold = max(0, int(request.query_params.get("threshold", 0)))
+        except (TypeError, ValueError):
+            threshold = 0
+
+        try:
+            limit = max(1, min(int(request.query_params.get("limit", 8)), 50))
+        except (TypeError, ValueError):
+            limit = 8
+
+        products = (
+            Product.objects.filter(is_active=True, stock_quantity__lte=threshold)
+            .select_related("category")
+            .order_by("stock_quantity", "name")[:limit]
+        )
+
+        return Response(
+            [
+                {
+                    "id": str(product.id),
+                    "name": product.name,
+                    "slug": product.slug,
+                    "category_name": product.category.name,
+                    "stock_quantity": product.stock_quantity,
+                    "unit": product.unit,
+                    "is_out_of_stock": product.stock_quantity == 0,
+                }
+                for product in products
+            ]
+        )
+
+
 class AdminCategoryViewSet(ModelViewSet):
     """Admin CRUD for categories."""
     serializer_class = CategorySerializer

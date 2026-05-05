@@ -6,6 +6,7 @@ from rest_framework_nested import routers as nested_routers
 from .views import (
     AdminAttributeDefinitionViewSet,
     AdminCategoryViewSet,
+    AdminLowStockProductsView,
     AdminProductViewSet,
     AdminVariantViewSet,
     CategoryDetailView,
@@ -37,6 +38,7 @@ urlpatterns = [
     path("categories/<slug:slug>/", CategoryDetailView.as_view(), name="category-detail"),
     path("<slug:slug>/", ProductDetailView.as_view(), name="product-detail"),
     # Admin
+    path("admin/low-stock/", AdminLowStockProductsView.as_view(), name="admin-low-stock-products"),
     path("", include(router.urls)),
     path("", include(product_router.urls)),
     path("", include(category_router.urls)),

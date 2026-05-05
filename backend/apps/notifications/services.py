@@ -23,8 +23,17 @@ def notify_staff_new_paid_order(order) -> None:
     message = f"Order #{order.order_number} from {label} — ${total:.2f}"
     action_url = f"/admin/orders?order={order.order_number}"
 
-    Notification.objects.bulk_create(
-        [
+    notifications = []
+    for uid in staff_ids:
+        already_exists = Notification.objects.filter(
+            user_id=uid,
+            notification_type="admin_order",
+            metadata__order_number=order.order_number,
+        ).exists()
+        if already_exists:
+            continue
+
+        notifications.append(
             Notification(
                 user_id=uid,
                 title=title,
@@ -33,6 +42,7 @@ def notify_staff_new_paid_order(order) -> None:
                 action_url=action_url,
                 metadata={"order_number": order.order_number, "order_id": str(order.id)},
             )
-            for uid in staff_ids
-        ]
-    )
+        )
+
+    if notifications:
+        Notification.objects.bulk_create(notifications)

@@ -87,9 +87,13 @@ def send_order_confirmation_email(self, order_id: str):
         raise self.retry(exc=exc, countdown=60)
 
 
-@shared_task(bind=True, max_retries=3)
-def send_order_status_update_email(self, order_id: str, new_status: str):
-    """Send email for order status change (in-app notification is created in update_order_status)."""
+@shared_task
+def send_order_status_update_email(order_id: str, new_status: str):
+    """Send email for order status change (in-app notification is created in update_order_status).
+
+    Best-effort only: must not raise into the request path when CELERY_TASK_ALWAYS_EAGER /
+    CELERY_TASK_EAGER_PROPAGATES is enabled (would return 500 after the order row is already saved).
+    """
     try:
         from apps.orders.models import Order
 
@@ -97,27 +101,24 @@ def send_order_status_update_email(self, order_id: str, new_status: str):
         user = order.user
         msg = order_status_body_fragment(new_status)
 
-        try:
-            send_mail(
-                subject=f"Mary Kitchen – Order #{order.order_number} Update",
-                message=(
-                    f"Hi {user.first_name},\n\n"
-                    f"Your order #{order.order_number} {msg}.\n\n"
-                    f"Track your order: {settings.FRONTEND_URL}/orders/{order.order_number}\n\n"
-                    f"Thank you,\nMary Kitchen Team\n"
-                ),
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=False,
-            )
-        except Exception:
-            logger.exception(
-                "send_order_status_update_email: send_mail failed for order %s status %s",
-                order_id,
-                new_status,
-            )
-    except Exception as exc:
-        raise self.retry(exc=exc, countdown=60)
+        send_mail(
+            subject=f"Mary Kitchen – Order #{order.order_number} Update",
+            message=(
+                f"Hi {user.first_name},\n\n"
+                f"Your order #{order.order_number} {msg}.\n\n"
+                f"Track your order: {settings.FRONTEND_URL}/orders/{order.order_number}\n\n"
+                f"Thank you,\nMary Kitchen Team\n"
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception(
+            "send_order_status_update_email failed order_id=%s new_status=%s",
+            order_id,
+            new_status,
+        )
 
 
 @shared_task(bind=True, max_retries=3)

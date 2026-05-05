@@ -31,6 +31,16 @@ type ConversionStats = {
   conversion_rate: number;
 };
 
+type LowStockProduct = {
+  id: string;
+  name: string;
+  slug: string;
+  category_name: string;
+  stock_quantity: number;
+  unit: string;
+  is_out_of_stock: boolean;
+};
+
 export default function AdminDashboardPage() {
   const { data: orders } = useQuery({
     queryKey: ["admin-orders"],
@@ -55,6 +65,13 @@ export default function AdminDashboardPage() {
   const { data: conversion } = useQuery<ConversionStats>({
     queryKey: ["conversion-rate"],
     queryFn: () => api.get("/analytics/conversion/?days=7").then((r) => r.data),
+  });
+
+  const { data: lowStockProducts } = useQuery<LowStockProduct[]>({
+    queryKey: ["admin-low-stock-products"],
+    queryFn: () => api.get("/products/admin/low-stock/?threshold=0&limit=8").then((r) => r.data),
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
   });
 
   const recentOrders = orders?.results || [];
@@ -108,20 +125,33 @@ export default function AdminDashboardPage() {
           </ResponsiveContainer>
         </div>
 
-        {/* OOS Alert */}
+        {/* Product stock alert */}
         <div className="lg:col-span-2 bg-white rounded-xl border border-gray-100 shadow-sm p-5">
           <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-orange-500" /> Out-of-Stock Orders
+            <AlertTriangle className="w-4 h-4 text-orange-500" /> Out-of-Stock Products
           </h3>
-          {recentOrders.filter((o: any) => o.has_out_of_stock_items).length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-8">No out-of-stock alerts</p>
+          {!lowStockProducts ? (
+            <p className="text-sm text-gray-400 text-center py-8">Loading stock alerts...</p>
+          ) : lowStockProducts.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-8">No out-of-stock products</p>
           ) : (
             <div className="space-y-2">
-              {recentOrders.filter((o: any) => o.has_out_of_stock_items).map((o: any) => (
-                <div key={o.id} className="p-3 bg-orange-50 rounded-lg text-sm">
-                  <p className="font-medium text-gray-900">#{o.order_number}</p>
-                  <p className="text-gray-500">{o.user_email}</p>
-                </div>
+              {lowStockProducts.map((product) => (
+                <a
+                  key={product.id}
+                  href={`/admin/products/${product.id}/edit`}
+                  className="block p-3 bg-orange-50 rounded-lg text-sm hover:bg-orange-100 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-gray-900">{product.name}</p>
+                      <p className="text-gray-500">{product.category_name}</p>
+                    </div>
+                    <span className="text-xs font-semibold text-orange-700 bg-orange-100 px-2 py-1 rounded-full whitespace-nowrap">
+                      {product.stock_quantity} {product.unit}
+                    </span>
+                  </div>
+                </a>
               ))}
             </div>
           )}

@@ -24,30 +24,51 @@ export default function CheckoutSuccessPage() {
       return;
     }
 
-    api
-      .get("/payments/checkout-session/", { params: { session_id: sessionId } })
-      .then((res) => {
-        const body = res.data;
-        if (!body.success) {
-          setStatus("error");
-          setMessage(body.message || "Could not verify your payment.");
+    let cancelled = false;
+
+    const verifyCheckout = async () => {
+      const maxAttempts = 4;
+      let lastError: any = null;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+          const res = await api.get("/payments/checkout-session/", { params: { session_id: sessionId } });
+          const body = res.data;
+          if (!body.success) {
+            throw { response: { status: 400, data: body } };
+          }
+
+          if (cancelled) return;
+          setOrderNumber(body.data.order_number);
+          setStatus("ok");
+          void fetchCart();
           return;
+        } catch (err) {
+          lastError = err;
+          if (attempt < maxAttempts) {
+            await new Promise((resolve) => window.setTimeout(resolve, attempt * 1000));
+          }
         }
-        setOrderNumber(body.data.order_number);
-        setStatus("ok");
-        void fetchCart();
-      })
-      .catch((err: any) => {
-        setStatus("error");
-        const statusCode = err?.response?.status;
-        const serverMessage = err?.response?.data?.message;
-        setMessage(
-          serverMessage ||
-            (statusCode
-              ? `Payment succeeded, but verification returned ${statusCode}. Please view your orders.`
-              : "Payment succeeded, but we could not reach the verification API. Please view your orders.")
-        );
-      });
+      }
+
+      if (cancelled) return;
+      const statusCode = lastError?.response?.status;
+      const serverMessage = lastError?.response?.data?.message;
+      setStatus("error");
+      setMessage(
+        serverMessage ||
+          (statusCode
+            ? `Payment succeeded, but verification returned ${statusCode}. Please view your orders.`
+            : "Payment succeeded, but we could not reach the verification API. Please view your orders.")
+      );
+      void fetchCart();
+    };
+
+    void verifyCheckout();
+
+    return () => {
+      cancelled = true;
+    };
   }, [fetchCart]);
 
   if (status === "loading") {

@@ -230,7 +230,13 @@ def handle_payment_success(payment_intent_id: str) -> Payment | None:
     if duplicates:
         Payment.objects.filter(id__in=[p.id for p in duplicates]).update(status="succeeded")
 
+    from apps.notifications.services import notify_staff_new_paid_order
+
     if payment.status == "succeeded":
+        order = payment.order
+        if order.payment_status == "paid":
+            notify_staff_new_paid_order(order)
+            _clear_user_cart(order)
         return payment
 
     payment.status = "succeeded"
@@ -251,19 +257,31 @@ def handle_payment_success(payment_intent_id: str) -> Payment | None:
             note="Payment received via Stripe",
         )
 
-        from apps.notifications.services import notify_staff_new_paid_order
         from apps.notifications.tasks import send_order_confirmation_email
 
         notify_staff_new_paid_order(order)
-        send_order_confirmation_email.delay(str(order.id))
+        try:
+            send_order_confirmation_email.delay(str(order.id))
+        except Exception:
+            # Email/PDF failures must not make a paid checkout look failed.
+            import logging
 
+            logging.getLogger(__name__).exception(
+                "handle_payment_success: confirmation email task failed for order %s",
+                order.order_number,
+            )
+
+    _clear_user_cart(order)
+
+    return payment
+
+
+def _clear_user_cart(order: Order) -> None:
     try:
         cart = Cart.objects.get(user=order.user)
         cart.clear()
     except Cart.DoesNotExist:
         pass
-
-    return payment
 
 
 def handle_payment_failure(payment_intent_id: str, failure_message: str = "") -> Payment | None:

@@ -1,5 +1,6 @@
 """Order views."""
 import datetime
+import logging
 from decimal import Decimal
 
 import stripe
@@ -29,6 +30,8 @@ from .services import (
     rollback_checkout_order,
     update_order_status,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class CheckoutView(APIView):
@@ -292,4 +295,12 @@ class AdminOrderStatusUpdateView(APIView):
             changed_by=request.user,
             note=serializer.validated_data.get("note", ""),
         )
-        return Response({"success": True, "data": AdminOrderSerializer(order).data})
+        try:
+            data = AdminOrderSerializer(order).data
+        except Exception:
+            logger.exception(
+                "Admin order status update: serializer failed for order_number=%s",
+                order_number,
+            )
+            data = {"order_number": order.order_number, "status": order.status}
+        return Response({"success": True, "data": data})
