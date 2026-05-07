@@ -12,11 +12,14 @@ const api: AxiosInstance = axios.create({
   withCredentials: false,
 });
 
-// Attach access token to every request
+// Attach access token to every request; let FormData set its own Content-Type
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = Cookies.get("access_token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  if (config.data instanceof FormData) {
+    delete config.headers["Content-Type"];
   }
   return config;
 });
