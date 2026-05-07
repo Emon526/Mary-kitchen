@@ -235,12 +235,13 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-            "name", "description", "category",
+            "id", "name", "description", "category",
             "base_price", "compare_price",
             "stock_quantity", "allow_out_of_stock_orders",
             "is_active", "is_featured",
             "weight", "unit", "attributes", "sku", "tags",
         ]
+        read_only_fields = ["id"]
 
     def validate_sku(self, value):
         qs = Product.objects.filter(sku=value)
