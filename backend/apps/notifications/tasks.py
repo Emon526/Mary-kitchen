@@ -42,7 +42,7 @@ def send_otp_email(self, email: str, code: str, purpose: str):
 
 @shared_task(bind=True, max_retries=3)
 def send_order_confirmation_email(self, order_id: str):
-    """Send order confirmation to customer."""
+    """Send order confirmation email with PDF slip to customer."""
     try:
         from apps.orders.models import Order
         from apps.notifications.models import Notification
@@ -50,39 +50,38 @@ def send_order_confirmation_email(self, order_id: str):
         order = Order.objects.select_related("user").prefetch_related("items").get(id=order_id)
         user = order.user
 
-        Notification.objects.create(
+        Notification.objects.get_or_create(
             user=user,
-            title="Order placed successfully",
-            message=f"Your order #{order.order_number} was placed successfully and payment was received.",
             notification_type="order_update",
             action_url=f"/orders/{order.order_number}",
-            metadata={"order_number": order.order_number},
+            defaults=dict(
+                title="Order placed successfully",
+                message=f"Your order #{order.order_number} was placed and payment received.",
+                metadata={"order_number": order.order_number},
+            ),
         )
 
-        try:
-            message = (
-                f"Hi {user.first_name},\n\n"
-                f"Your order #{order.order_number} has been confirmed and is being processed.\n\n"
-                f"Order Total: ${order.total_amount}\n"
-                f"Order Type: {order.get_order_type_display()}\n\n"
-                "Your order slip is attached as a PDF.\n\n"
-                f"You can track your order at: {settings.FRONTEND_URL}/orders/{order.order_number}\n\n"
-                f"Thank you for shopping with Mary Kitchen!\n"
-            )
-            email = EmailMessage(
-                subject=f"Mary Kitchen – Order #{order.order_number} Confirmed!",
-                body=message,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                to=[user.email],
-            )
-            email.attach(
-                filename=f"order-{order.order_number}.pdf",
-                content=build_order_slip_pdf(order),
-                mimetype="application/pdf",
-            )
-            email.send(fail_silently=False)
-        except Exception:
-            logger.exception("send_order_confirmation_email: send_mail failed for order %s", order_id)
+        message = (
+            f"Hi {user.first_name},\n\n"
+            f"Your order #{order.order_number} has been confirmed and is being processed.\n\n"
+            f"Order Total: ${order.total_amount}\n"
+            f"Order Type: {order.get_order_type_display()}\n\n"
+            "Your order slip is attached as a PDF.\n\n"
+            f"You can track your order at: {settings.FRONTEND_URL}/orders/{order.order_number}\n\n"
+            "Thank you for shopping with Mary Kitchen!\n"
+        )
+        email = EmailMessage(
+            subject=f"Mary Kitchen – Order #{order.order_number} Confirmed!",
+            body=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[user.email],
+        )
+        email.attach(
+            filename=f"order-{order.order_number}.pdf",
+            content=build_order_slip_pdf(order),
+            mimetype="application/pdf",
+        )
+        email.send(fail_silently=False)
     except Exception as exc:
         raise self.retry(exc=exc, countdown=60)
 

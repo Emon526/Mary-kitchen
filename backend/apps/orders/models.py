@@ -50,6 +50,7 @@ class Order(BaseModel):
 
     has_out_of_stock_items = models.BooleanField(default=False)
     admin_notified_out_of_stock = models.BooleanField(default=False)
+    confirmation_email_sent = models.BooleanField(default=False)
 
     notes = models.TextField(blank=True, help_text="Customer notes")
     admin_notes = models.TextField(blank=True, help_text="Internal admin notes")

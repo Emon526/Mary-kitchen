@@ -32,6 +32,7 @@ THIRD_PARTY_APPS = [
     "axes",
     "django_filters",
     "drf_spectacular",
+    "anymail",
 ]
 
 LOCAL_APPS = [
@@ -249,6 +250,10 @@ EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
 EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="Mary Kitchen <noreply@marykitchen.com.au>")
+
+ANYMAIL = {
+    "RESEND_API_KEY": config("RESEND_API_KEY", default=""),
+}
 
 # ─── Stripe ───────────────────────────────────────────────────────────────────
 STRIPE_PUBLISHABLE_KEY = config("STRIPE_PUBLISHABLE_KEY", default="")
