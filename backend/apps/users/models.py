@@ -1,6 +1,5 @@
 """User-related models: custom User, Address, OTP, Wishlist."""
-import random
-import string
+import secrets
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
@@ -120,7 +119,7 @@ class OTPCode(TimeStampedModel):
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="otp_codes", null=True, blank=True)
     email = models.EmailField(db_index=True)
-    code = models.CharField(max_length=10)
+    code = models.CharField(max_length=64)  # stores HMAC-SHA256 hex digest
     purpose = models.CharField(max_length=20, choices=PURPOSE_CHOICES)
     is_used = models.BooleanField(default=False)
     expires_at = models.DateTimeField()
@@ -131,11 +130,11 @@ class OTPCode(TimeStampedModel):
         indexes = [models.Index(fields=["email", "purpose", "is_used"])]
 
     def __str__(self):
-        return f"{self.email} – {self.purpose} ({self.code})"
+        return f"{self.email} – {self.purpose}"
 
     @classmethod
     def generate_code(cls, length=6):
-        return "".join(random.choices(string.digits, k=length))
+        return "".join(secrets.choice("0123456789") for _ in range(length))
 
     @property
     def is_expired(self):

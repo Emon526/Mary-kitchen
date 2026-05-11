@@ -3,11 +3,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import toast from "react-hot-toast";
+import Cookies from "js-cookie";
 import api from "@/lib/api";
 import { parseApiFieldErrors } from "@/lib/parseApiFieldErrors";
-import Cookies from "js-cookie";
 import { useAuthStore } from "@/store/authStore";
-import { Loader2, ShoppingBag } from "lucide-react";
+import { Eye, EyeOff, Loader2, ShoppingBag } from "lucide-react";
 
 const FIELD_KEYS = [
   "first_name",
@@ -27,6 +27,8 @@ export default function RegisterPage() {
     password: "", password_confirm: "",
   });
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<(typeof FIELD_KEYS)[number] | "form", string>>>({});
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const clearFieldError = (field: (typeof FIELD_KEYS)[number]) => {
     setFieldErrors((prev) => {
@@ -52,11 +54,10 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       const { data } = await api.post("/auth/register/", form);
-      const { tokens, ...user } = data.data;
-      if (tokens) {
-        Cookies.set("access_token", tokens.access, { expires: 1 });
-        Cookies.set("refresh_token", tokens.refresh, { expires: 7 });
-      }
+      const { user, tokens } = data.data;
+      const secure = process.env.NODE_ENV === "production";
+      Cookies.set("access_token", tokens.access, { expires: 1, secure, sameSite: "lax" });
+      Cookies.set("refresh_token", tokens.refresh, { expires: 7, secure, sameSite: "lax" });
       setUser(user);
       toast.success("Account created! Check your email for a verification code.");
       router.push(`/verify-email?email=${encodeURIComponent(form.email)}`);
@@ -176,31 +177,51 @@ export default function RegisterPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <input
-                type="password"
-                required
-                value={form.password}
-                onChange={update("password")}
-                className={`input-field ${fieldErrors.password ? "border-red-500 ring-1 ring-red-200" : ""}`}
-                placeholder="Minimum 8 characters"
-                aria-invalid={!!fieldErrors.password}
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  required
+                  value={form.password}
+                  onChange={update("password")}
+                  className={`input-field pr-10 ${fieldErrors.password ? "border-red-500 ring-1 ring-red-200" : ""}`}
+                  placeholder="Minimum 8 characters"
+                  aria-invalid={!!fieldErrors.password}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute inset-y-0 right-3 flex items-center text-gray-400 hover:text-gray-600"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
               {fieldErrors.password && <p className="text-xs text-red-600 mt-1">{fieldErrors.password}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
-              <input
-                type="password"
-                required
-                value={form.password_confirm}
-                onChange={update("password_confirm")}
-                className={`input-field ${fieldErrors.password_confirm ? "border-red-500 ring-1 ring-red-200" : ""}`}
-                placeholder="••••••••"
-                aria-invalid={!!fieldErrors.password_confirm}
-              />
+              <div className="relative">
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  required
+                  value={form.password_confirm}
+                  onChange={update("password_confirm")}
+                  className={`input-field pr-10 ${fieldErrors.password_confirm ? "border-red-500 ring-1 ring-red-200" : ""}`}
+                  placeholder="••••••••"
+                  aria-invalid={!!fieldErrors.password_confirm}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((v) => !v)}
+                  className="absolute inset-y-0 right-3 flex items-center text-gray-400 hover:text-gray-600"
+                  aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                >
+                  {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
               {fieldErrors.password_confirm && <p className="text-xs text-red-600 mt-1">{fieldErrors.password_confirm}</p>}
             </div>
-            <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2">
+            <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-60 disabled:pointer-events-none">
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               Create Account
             </button>

@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import { Loader2, ShoppingBag } from "lucide-react";
+import { Eye, EyeOff, Loader2, ShoppingBag } from "lucide-react";
 import api from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/getApiErrorMessage";
 
@@ -19,6 +19,8 @@ export default function ForgotPasswordPage() {
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
   const [requestError, setRequestError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const requestCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,8 +43,13 @@ export default function ForgotPasswordPage() {
 
   const resetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
     if (newPassword !== newPasswordConfirm) {
       toast.error("Passwords do not match");
+      return;
+    }
+    if (code.length !== 6) {
+      toast.error("Enter the 6-digit reset code.");
       return;
     }
 
@@ -129,31 +136,52 @@ export default function ForgotPasswordPage() {
                   className="input-field tracking-[0.3em] text-center text-lg font-semibold"
                   placeholder="000000"
                   disabled={loading}
+                  autoComplete="one-time-code"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">New password</label>
-                <input
-                  type="password"
-                  required
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="input-field"
-                  placeholder="Minimum 8 characters"
-                  disabled={loading}
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="input-field pr-10"
+                    placeholder="Minimum 8 characters"
+                    disabled={loading}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute inset-y-0 right-3 flex items-center text-gray-400 hover:text-gray-600"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Confirm new password</label>
-                <input
-                  type="password"
-                  required
-                  value={newPasswordConfirm}
-                  onChange={(e) => setNewPasswordConfirm(e.target.value)}
-                  className="input-field"
-                  placeholder="Repeat password"
-                  disabled={loading}
-                />
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    required
+                    value={newPasswordConfirm}
+                    onChange={(e) => setNewPasswordConfirm(e.target.value)}
+                    className="input-field pr-10"
+                    placeholder="Repeat password"
+                    disabled={loading}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((v) => !v)}
+                    className="absolute inset-y-0 right-3 flex items-center text-gray-400 hover:text-gray-600"
+                    aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <button
                 type="submit"

@@ -3,8 +3,7 @@ import logging
 
 from celery import shared_task
 from django.conf import settings
-from django.core.mail import EmailMessage
-from django.core.mail import send_mail
+from django.core.mail import EmailMessage, EmailMultiAlternatives, send_mail
 
 from apps.notifications.order_status_copy import order_status_body_fragment
 from apps.notifications.order_slip_pdf import build_order_slip_pdf
@@ -22,20 +21,39 @@ def send_otp_email(self, email: str, code: str, purpose: str):
         "phone_verify": "Phone Verification",
     }
     label = purpose_labels.get(purpose, "Verification")
+    expiry = settings.OTP_EXPIRY_MINUTES
+
+    plain_text = (
+        f"Your Mary Kitchen {label} code is: {code}\n\n"
+        f"This code expires in {expiry} minutes.\n"
+        "Do not share this code with anyone.\n\n"
+        "If you did not request this, you can safely ignore this email."
+    )
+
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#f9fafb;border-radius:12px;">
+      <h2 style="color:#1a5276;margin:0 0 8px;">Mary Kitchen</h2>
+      <p style="color:#555;margin:0 0 24px;font-size:15px;">Your {label} code</p>
+      <div style="background:#fff;border-radius:10px;padding:24px;text-align:center;border:1px solid #e5e7eb;">
+        <p style="margin:0 0 8px;color:#555;font-size:14px;">Use this code to continue:</p>
+        <div style="font-size:36px;font-weight:700;letter-spacing:10px;color:#1a5276;padding:12px 0;">{code}</div>
+        <p style="margin:12px 0 0;color:#999;font-size:12px;">Expires in {expiry} minutes &nbsp;·&nbsp; Do not share this code</p>
+      </div>
+      <p style="color:#aaa;font-size:12px;margin:20px 0 0;text-align:center;">
+        If you did not request this code, you can safely ignore this email.
+      </p>
+    </div>
+    """
+
     try:
-        message = (
-            f"Your Mary Kitchen {label.lower()} code is: {code}\n\n"
-            f"This code expires in {settings.OTP_EXPIRY_MINUTES} minutes.\n\n"
-            "If you did not request this code, you can safely ignore this email.\n\n"
-            "Do not share this code with anyone."
-        )
-        send_mail(
+        msg = EmailMultiAlternatives(
             subject=f"Mary Kitchen – Your {label} Code",
-            message=message,
+            body=plain_text,
             from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
-            fail_silently=False,
+            to=[email],
         )
+        msg.attach_alternative(html, "text/html")
+        msg.send(fail_silently=False)
     except Exception as exc:
         raise self.retry(exc=exc, countdown=60)
 

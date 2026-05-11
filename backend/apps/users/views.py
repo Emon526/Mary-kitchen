@@ -3,8 +3,9 @@ import logging
 
 from axes.handlers.proxy import AxesProxyHandler
 from axes.helpers import get_client_ip_address, get_credentials, get_lockout_message
-from django.db import transaction
 from django.contrib.auth import get_user_model
+from django.db import transaction
+from django.db.models import ProtectedError
 from rest_framework import generics, serializers, status
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -12,10 +13,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenRefreshView
 
+from apps.orders.models import Order
 from core.otp_rate_limit import consume_otp_request_slot
-from core.permissions import ADMIN_API_PERMISSION_CLASSES, IsOwnerOrAdmin
+from core.permissions import ADMIN_API_PERMISSION_CLASSES
 
 from .models import Address, User, Wishlist, WishlistItem
 from .serializers import (
@@ -28,7 +29,6 @@ from .serializers import (
     PasswordResetConfirmSerializer,
     UserProfileSerializer,
     UserRegistrationSerializer,
-    WishlistItemSerializer,
     WishlistSerializer,
 )
 from .services import send_otp, verify_otp
@@ -45,26 +45,29 @@ class RegisterView(generics.CreateAPIView):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        try:
-            with transaction.atomic():
-                user = serializer.save()
-                send_otp(user.email, "email_verify")
-        except Exception:
-            logger.exception("RegisterView: failed to send verification OTP email")
-            return Response(
-                {
-                    "success": False,
-                    "message": (
-                        "Account could not be completed because the verification email could not be sent. "
-                        "Check SMTP settings (EMAIL_* in .env) and try again."
-                    ),
-                },
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-        return Response(
-            {"success": True, "data": serializer.data, "message": "Registration successful. Check your email for OTP."},
-            status=status.HTTP_201_CREATED,
+        with transaction.atomic():
+            user = serializer.save()
+
+        _, email_sent = send_otp(user.email, "email_verify")
+
+        refresh = RefreshToken.for_user(user)
+        message = (
+            "Registration successful. Check your email for your verification code."
+            if email_sent
+            else "Account created. We could not send the verification email right now — "
+                 "use 'Resend code' on the verification page to try again."
         )
+        return Response({
+            "success": True,
+            "data": {
+                "user": UserProfileSerializer(user).data,
+                "tokens": {
+                    "refresh": str(refresh),
+                    "access": str(refresh.access_token),
+                },
+            },
+            "message": message,
+        }, status=status.HTTP_201_CREATED)
 
 
 class LoginView(APIView):
@@ -150,20 +153,11 @@ class OTPRequestView(APIView):
                 {"success": False, "message": rate_msg},
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
-        try:
-            send_otp(**serializer.validated_data)
-        except Exception:
-            logger.exception("OTPRequestView: failed to send OTP email")
-            return Response(
-                {
-                    "success": False,
-                    "message": (
-                        "We could not send the email. Check SMTP settings (EMAIL_* in .env), or try again later."
-                    ),
-                },
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-        return Response({"success": True, "message": "OTP sent to your email."})
+        _, email_sent = send_otp(**serializer.validated_data)
+        return Response({
+            "success": True,
+            "message": "OTP sent to your email." if email_sent else "Code generated but email could not be sent. Try again later.",
+        })
 
 
 class OTPVerifyView(APIView):
@@ -249,20 +243,7 @@ class PasswordResetRequestView(APIView):
             )
 
         if User.objects.filter(email=email).exists():
-            try:
-                send_otp(email, "password_reset")
-            except Exception:
-                logger.exception("PasswordResetRequestView: OTP email failed for %s", email)
-                return Response(
-                    {
-                        "success": False,
-                        "message": (
-                            "We could not send the reset email. Check SMTP settings (EMAIL_* in .env), "
-                            "or try again later."
-                        ),
-                    },
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                )
+            send_otp(email, "password_reset")
         return Response({"success": True, "message": "If this email exists, a reset code has been sent."})
 
 
@@ -363,8 +344,19 @@ class AdminUserListView(generics.ListAPIView):
     filterset_fields = ["is_active", "is_staff", "is_email_verified"]
 
 
-class AdminUserDetailView(generics.RetrieveUpdateAPIView):
-    """Admin: view/update user."""
+class AdminUserDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Admin: view/update/delete user."""
     serializer_class = AdminUserSerializer
     permission_classes = ADMIN_API_PERMISSION_CLASSES
     queryset = User.objects.all()
+
+    def perform_destroy(self, instance):
+        if instance.pk == self.request.user.pk:
+            raise serializers.ValidationError("You cannot delete your own account.")
+        if instance.is_superuser:
+            raise serializers.ValidationError("Superuser accounts cannot be deleted via this endpoint.")
+        try:
+            Order.objects.filter(user=instance).delete()
+            instance.delete()
+        except ProtectedError as e:
+            raise serializers.ValidationError(f"Cannot delete user: {e}")

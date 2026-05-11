@@ -276,3 +276,5 @@ DEFAULT_DELIVERY_RADIUS_KM = config("DEFAULT_DELIVERY_RADIUS_KM", default=25, ca
 # ─── OTP ─────────────────────────────────────────────────────────────────────
 OTP_EXPIRY_MINUTES = 10
 OTP_LENGTH = 6
+# Separate HMAC signing key for OTP hashes; falls back to SECRET_KEY if unset.
+OTP_SECRET_KEY = config("OTP_SECRET_KEY", default="")

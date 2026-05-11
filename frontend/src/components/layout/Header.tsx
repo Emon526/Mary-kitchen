@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCartStore } from "@/store/cartStore";
 import { useAuthStore } from "@/store/authStore";
-import { ShoppingCart, User, Search, Menu, X, ShoppingBag, Bell, LogOut, Package } from "lucide-react";
+import { AlertCircle, ShoppingCart, User, Search, Menu, X, ShoppingBag, Bell, LogOut, Package } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
@@ -110,7 +110,10 @@ export default function Header() {
 
   const cartCount = cart?.items?.length || 0;
 
+  const showVerifyBanner = isAuthenticated && user && !user.is_email_verified;
+
   return (
+    <>
     <header className="bg-primary-700 text-white sticky top-0 z-50 shadow-lg">
       {/* Top bar */}
       <div className="container-xl">
@@ -287,5 +290,23 @@ export default function Header() {
         </div>
       )}
     </header>
+
+    {showVerifyBanner && (
+      <div className="bg-amber-50 border-b border-amber-200">
+        <div className="container-xl flex items-center justify-between gap-3 py-2.5 px-4">
+          <div className="flex items-center gap-2 text-amber-800 text-sm">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>Your email address is not verified. Some features may be restricted.</span>
+          </div>
+          <Link
+            href={`/verify-email?email=${encodeURIComponent(user.email)}`}
+            className="flex-shrink-0 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+          >
+            Verify Email
+          </Link>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

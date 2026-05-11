@@ -68,7 +68,8 @@ api.interceptors.response.use(
           refresh: refreshToken,
         });
         const newAccess = data.access;
-        Cookies.set("access_token", newAccess, { expires: 1 });
+        const secure = process.env.NODE_ENV === "production";
+        Cookies.set("access_token", newAccess, { expires: 1, secure, sameSite: "lax" });
         processQueue(null, newAccess);
         originalRequest.headers = { ...originalRequest.headers, Authorization: `Bearer ${newAccess}` };
         return api(originalRequest);

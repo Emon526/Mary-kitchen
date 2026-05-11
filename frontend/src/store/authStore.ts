@@ -46,11 +46,12 @@ export const useAuthStore = create<AuthState>()(
 
       login: async (email, password) => {
         set({ isLoading: true });
+        const secure = process.env.NODE_ENV === "production";
         try {
           const { data } = await api.post("/auth/login/", { email, password });
           const { tokens, user } = data.data;
-          Cookies.set("access_token", tokens.access, { expires: 1 });
-          Cookies.set("refresh_token", tokens.refresh, { expires: 7 });
+          Cookies.set("access_token", tokens.access, { expires: 1, secure, sameSite: "lax" });
+          Cookies.set("refresh_token", tokens.refresh, { expires: 7, secure, sameSite: "lax" });
           set({ user, isAuthenticated: true, isLoading: false });
         } catch (error) {
           set({ isLoading: false });
