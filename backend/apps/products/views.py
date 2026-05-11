@@ -9,6 +9,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
+from core.validators import validate_image_file
+
 from core.permissions import ADMIN_API_PERMISSION_CLASSES, IsAdminOrReadOnly
 from core.pagination import AdminResultsPagination
 
@@ -155,6 +157,10 @@ class AdminProductViewSet(ModelViewSet):
         image = request.FILES.get("image")
         if not image:
             return Response({"error": "No image provided."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            validate_image_file(image)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         raw_primary = request.data.get("is_primary", False)
         is_primary = raw_primary in (True, "true", "True", "1", 1, "yes")
         alt_text = request.data.get("alt_text", "")

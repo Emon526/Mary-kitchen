@@ -3,6 +3,7 @@ from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from core.validators import validate_image_file
 from .models import Address, OTPCode, User, Wishlist, WishlistItem
 
 
@@ -57,6 +58,9 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "is_staff", "date_joined",
         ]
         read_only_fields = ["id", "email", "is_email_verified", "is_phone_verified", "is_staff", "date_joined"]
+
+    def validate_avatar(self, value):
+        return validate_image_file(value)
 
 
 class AddressSerializer(serializers.ModelSerializer):

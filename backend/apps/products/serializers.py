@@ -3,6 +3,7 @@ from django.utils.text import slugify
 
 from rest_framework import serializers
 
+from core.validators import validate_image_file
 from .models import AttributeDefinition, Category, Product, ProductImage, ProductVariant
 
 
@@ -72,6 +73,9 @@ class CategorySerializer(serializers.ModelSerializer):
         if request:
             return request.build_absolute_uri(url)
         return url
+
+    def validate_image(self, value):
+        return validate_image_file(value)
 
     def validate_name(self, value):
         name = (value or "").strip()
