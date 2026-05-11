@@ -1,5 +1,5 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -7,7 +7,7 @@ import toast from "react-hot-toast";
 import api from "@/lib/api";
 import { useCartStore } from "@/store/cartStore";
 import { formatCurrency, formatDate, getStatusColor, orderStatusLabel } from "@/lib/utils";
-import { Package, MapPin, CreditCard, CheckCircle, Clock, Truck, Home, ShoppingBag } from "lucide-react";
+import { Package, MapPin, CreditCard, CheckCircle, Clock, Truck, Home, ShoppingBag, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 const DELIVERY_STEPS = [
@@ -29,6 +29,7 @@ const PICKUP_STEPS = [
 export default function OrderDetailPage() {
   const { orderNumber } = useParams();
   const queryClient = useQueryClient();
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined" || !orderNumber) return;
@@ -61,6 +62,18 @@ export default function OrderDetailPage() {
   const steps = isPickup ? PICKUP_STEPS : DELIVERY_STEPS;
   const currentStepIdx = steps.findIndex((s) => s.key === order.status);
   const isCancelled = order.status === "cancelled";
+  const canPay = ["unpaid", "failed"].includes(order.payment_status) && !isCancelled;
+
+  const handleRetryPayment = async () => {
+    setRetrying(true);
+    try {
+      const res = await api.post("/payments/create-intent/", { order_number: order.order_number });
+      window.location.href = res.data.data.checkout_url;
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || "Failed to start payment. Please try again.");
+      setRetrying(false);
+    }
+  };
 
   return (
     <div className="container-xl py-8">
@@ -158,6 +171,21 @@ export default function OrderDetailPage() {
               <CreditCard className="w-4 h-4 text-primary-600" /> Payment
             </h2>
             <span className={`badge ${getStatusColor(order.payment_status)}`}>{orderStatusLabel(order.payment_status)}</span>
+            {canPay && (
+              <div className="mt-3">
+                {order.payment_status === "failed" && (
+                  <p className="text-xs text-red-600 mb-2">Your payment failed. Please try again.</p>
+                )}
+                <button
+                  onClick={handleRetryPayment}
+                  disabled={retrying}
+                  className="btn-primary w-full text-sm flex items-center justify-center gap-2"
+                >
+                  {retrying ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
+                  {retrying ? "Redirecting…" : order.payment_status === "failed" ? "Retry Payment" : "Pay Now"}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Delivery Address or Pickup notice */}
