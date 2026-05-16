@@ -109,6 +109,14 @@ DATABASES = {
     }
 }
 
+# DATABASE_URL overrides individual DB_* vars (used by Render, Neon, Railway, etc.)
+_database_url = config("DATABASE_URL", default="")
+if _database_url:
+    import dj_database_url
+    DATABASES["default"] = dj_database_url.parse(
+        _database_url, conn_max_age=60, conn_health_checks=True
+    )
+
 # ─── Custom User Model ────────────────────────────────────────────────────────
 AUTH_USER_MODEL = "users.User"
 

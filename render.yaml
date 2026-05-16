@@ -1,0 +1,68 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Free tier: web service spins down after 15 min inactivity (cold start ~30s)
+# Database: use Neon free tier → https://neon.tech (set DATABASE_URL)
+# Redis:    use Upstash free tier → https://upstash.com (set REDIS_URL)
+
+services:
+  - type: web
+    name: mary-kitchen-backend
+    runtime: python
+    region: singapore
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
+    preDeployCommand: python manage.py migrate --noinput
+    startCommand: gunicorn mary_kitchen.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --access-logfile -
+    healthCheckPath: /api/v1/products/
+    autoDeploy: false
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: mary_kitchen.settings.production
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: DEBUG
+        value: "False"
+
+      # Set the following in the Render dashboard → Environment
+      - key: SECRET_KEY
+        sync: false
+      - key: ALLOWED_HOSTS
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: CELERY_BROKER_URL
+        sync: false
+      - key: CELERY_RESULT_BACKEND
+        sync: false
+      - key: EMAIL_BACKEND
+        value: django.core.mail.backends.smtp.EmailBackend
+      - key: EMAIL_HOST
+        value: smtp.gmail.com
+      - key: EMAIL_PORT
+        value: "587"
+      - key: EMAIL_USE_TLS
+        value: "True"
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: STORE_LATITUDE
+        value: "-12.4634"
+      - key: STORE_LONGITUDE
+        value: "130.8456"
+      - key: DEFAULT_DELIVERY_RADIUS_KM
+        value: "25"
