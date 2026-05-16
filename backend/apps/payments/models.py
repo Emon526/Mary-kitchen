@@ -11,6 +11,7 @@ class Payment(BaseModel):
         ("failed", "Failed"),
         ("cancelled", "Cancelled"),
         ("refunded", "Refunded"),
+        ("partially_refunded", "Partially Refunded"),
     ]
 
     order = models.ForeignKey("orders.Order", on_delete=models.CASCADE, related_name="payments")
@@ -23,6 +24,8 @@ class Payment(BaseModel):
     stripe_payment_intent_id = models.CharField(max_length=200, blank=True, db_index=True)
     stripe_client_secret = models.CharField(max_length=500, blank=True)
     stripe_charge_id = models.CharField(max_length=200, blank=True)
+    stripe_refund_id = models.CharField(max_length=200, blank=True, default="")
+    refund_reason = models.TextField(blank=True)
 
     failure_message = models.TextField(blank=True)
     metadata = models.JSONField(default=dict, blank=True)

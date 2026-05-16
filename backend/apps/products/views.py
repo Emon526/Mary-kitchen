@@ -3,6 +3,7 @@ from django.db.models import Exists, F, OuterRef, Prefetch, Q
 from django.db.models.deletion import ProtectedError
 from rest_framework import generics, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -244,6 +245,33 @@ class AdminCategoryViewSet(ModelViewSet):
                 {"detail": "This category cannot be deleted because it contains products."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+    @action(detail=True, methods=["get"], url_path="inactive-products")
+    def inactive_products(self, request, pk=None):
+        """GET /admin/categories/<id>/inactive-products/ — disabled products in this category."""
+        category = self.get_object()
+        products = (
+            Product.objects.filter(category=category, is_active=False)
+            .order_by("name")
+            .values("id", "name", "sku")
+        )
+        return Response(list(products))
+
+    @action(detail=True, methods=["post"], url_path="activate-products")
+    def activate_products(self, request, pk=None):
+        """POST /admin/categories/<id>/activate-products/ — bulk-reactivate disabled products."""
+        category = self.get_object()
+        activate_all = request.data.get("activate_all", False)
+        if activate_all:
+            count = Product.objects.filter(category=category, is_active=False).update(is_active=True)
+        else:
+            product_ids = request.data.get("product_ids", [])
+            if not isinstance(product_ids, list):
+                raise ValidationError({"product_ids": "Must be a list of product UUIDs."})
+            count = Product.objects.filter(
+                category=category, id__in=product_ids, is_active=False
+            ).update(is_active=True)
+        return Response({"activated": count})
 
 
 class AdminVariantViewSet(ModelViewSet):

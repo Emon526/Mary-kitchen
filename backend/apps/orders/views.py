@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import stripe
 from django.db import transaction
-from django.db.models import Count, DecimalField, ExpressionWrapper, F, Sum
+from django.db.models import Case, Count, DecimalField, ExpressionWrapper, F, Sum, When
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 from rest_framework import generics, status
@@ -15,6 +15,7 @@ from rest_framework.views import APIView
 
 from core.permissions import ADMIN_API_PERMISSION_CLASSES, IsOwnerOrAdmin
 
+from apps.payments.models import Payment as PaymentModel
 from apps.payments.services import create_checkout_session
 
 from .models import Order, OrderItem
@@ -164,26 +165,34 @@ class AdminRevenueView(APIView):
         except (TypeError, ValueError):
             days = 7
 
-        since = timezone.now().date() - datetime.timedelta(days=days - 1)
+        # Use localdate() so TruncDate (which uses settings.TIME_ZONE) and
+        # the loop iteration both operate in the same timezone.
+        since = timezone.localdate() - datetime.timedelta(days=days - 1)
 
+        net_amount = ExpressionWrapper(
+            F("total_amount") - F("refunded_amount"),
+            output_field=DecimalField(max_digits=12, decimal_places=2),
+        )
         rows = (
             Order.objects.filter(
                 created_at__date__gte=since,
-                payment_status="paid",
+                status="delivered",
+                payment_status__in=["paid", "partially_refunded"],
             )
-            .annotate(day=TruncDate("created_at"))
+            .annotate(day=TruncDate("created_at"), net=net_amount)
             .values("day")
-            .annotate(revenue=Sum("total_amount"))
+            .annotate(revenue=Sum("net"))
             .order_by("day")
         )
 
         revenue_by_date = {row["day"]: float(row["revenue"] or 0) for row in rows}
 
+        label_fmt = "%a" if days <= 7 else "%b %d"
         result = []
         for i in range(days):
             d = since + datetime.timedelta(days=i)
             result.append({
-                "name": d.strftime("%a"),
+                "name": d.strftime(label_fmt),
                 "revenue": revenue_by_date.get(d, 0),
             })
 
@@ -191,32 +200,51 @@ class AdminRevenueView(APIView):
 
 
 class AdminDashboardStatsView(APIView):
-    """GET /api/v1/orders/admin/stats/ – aggregate admin dashboard metrics."""
+    """GET /api/v1/orders/admin/stats/?days=7 – aggregate admin dashboard metrics."""
 
     permission_classes = ADMIN_API_PERMISSION_CLASSES
 
     def get(self, request):
-        now = timezone.now()
-        current_start = now - datetime.timedelta(days=7)
-        previous_start = now - datetime.timedelta(days=14)
+        try:
+            days = max(1, min(int(request.query_params.get("days", 7)), 90))
+        except (TypeError, ValueError):
+            days = 7
 
-        current_orders = Order.objects.filter(created_at__gte=current_start)
-        current_paid_orders = current_orders.filter(payment_status="paid")
-        previous_paid_orders = Order.objects.filter(
-            created_at__gte=previous_start,
-            created_at__lt=current_start,
-            payment_status="paid",
+        now = timezone.now()
+        current_start = now - datetime.timedelta(days=days)
+        previous_start = now - datetime.timedelta(days=days * 2)
+
+        net_expr = ExpressionWrapper(
+            F("total_amount") - F("refunded_amount"),
+            output_field=DecimalField(max_digits=12, decimal_places=2),
         )
 
-        revenue_7d = float(current_paid_orders.aggregate(total=Sum("total_amount"))["total"] or 0)
-        previous_revenue_7d = float(previous_paid_orders.aggregate(total=Sum("total_amount"))["total"] or 0)
+        current_orders = Order.objects.filter(created_at__gte=current_start)
+        current_revenue_qs = current_orders.filter(
+            status="delivered",
+            payment_status__in=["paid", "partially_refunded"],
+        )
+        previous_revenue_qs = Order.objects.filter(
+            created_at__gte=previous_start,
+            created_at__lt=current_start,
+            status="delivered",
+            payment_status__in=["paid", "partially_refunded"],
+        )
+
+        current_agg = current_revenue_qs.annotate(net=net_expr).aggregate(
+            total=Sum("net"), count=Count("id")
+        )
+        revenue = float(current_agg["total"] or 0)
+        paid_orders_count = current_agg["count"] or 0
+        previous_revenue = float(
+            previous_revenue_qs.annotate(net=net_expr).aggregate(total=Sum("net"))["total"] or 0
+        )
         orders_count = current_orders.count()
-        paid_orders_count = current_paid_orders.count()
-        aov = revenue_7d / paid_orders_count if paid_orders_count else 0.0
-        if previous_revenue_7d == 0:
-            growth = 100.0 if revenue_7d > 0 else 0.0
+        aov = revenue / paid_orders_count if paid_orders_count else 0.0
+        if previous_revenue == 0:
+            growth = 100.0 if revenue > 0 else 0.0
         else:
-            growth = ((revenue_7d - previous_revenue_7d) / previous_revenue_7d) * 100
+            growth = ((revenue - previous_revenue) / previous_revenue) * 100
 
         status_breakdown = list(
             current_orders.values("payment_status")
@@ -226,11 +254,12 @@ class AdminDashboardStatsView(APIView):
 
         return Response(
             {
-                "revenue_7d": revenue_7d,
+                "revenue": revenue,
                 "orders_count": orders_count,
                 "aov": float(aov),
                 "growth": float(growth),
                 "status_breakdown": status_breakdown,
+                "days": days,
             }
         )
 
@@ -246,7 +275,7 @@ class AdminTopProductsView(APIView):
         except (TypeError, ValueError):
             days = 7
 
-        since = timezone.now().date() - datetime.timedelta(days=days - 1)
+        since = timezone.localdate() - datetime.timedelta(days=days - 1)
         line_revenue = ExpressionWrapper(
             F("quantity") * F("unit_price"),
             output_field=DecimalField(max_digits=12, decimal_places=2),
@@ -256,6 +285,7 @@ class AdminTopProductsView(APIView):
             OrderItem.objects.filter(
                 order__created_at__date__gte=since,
                 order__payment_status="paid",
+                order__status="delivered",
             )
             .values("product_id", "product_name")
             .annotate(
@@ -278,6 +308,87 @@ class AdminTopProductsView(APIView):
         )
 
 
+class AdminRefundStatsView(APIView):
+    """GET /api/v1/orders/admin/refund-stats/?days=7
+
+    Returns:
+      - total_refunds       – number of refunded orders in the period
+      - total_refunded_amount – sum of order total_amount for those orders
+      - top_refunded_products – top 5 products that appear in refunded orders
+          (by refund count, then by refunded revenue)
+    """
+
+    permission_classes = ADMIN_API_PERMISSION_CLASSES
+
+    def get(self, request):
+        try:
+            days = max(1, min(int(request.query_params.get("days", 7)), 90))
+        except (TypeError, ValueError):
+            days = 7
+
+        since = timezone.now() - datetime.timedelta(days=days)
+
+        # Scope to orders whose Payment record transitioned to refunded/partially_refunded
+        # within the window. Using Payment.updated_at is accurate — it only changes when
+        # the payment status changes, unlike Order.updated_at which updates on any field.
+        refunded_order_ids = PaymentModel.objects.filter(
+            status__in=["refunded", "partially_refunded"],
+            updated_at__gte=since,
+        ).values_list("order_id", flat=True)
+
+        all_refund_orders = Order.objects.filter(
+            id__in=refunded_order_ids,
+            payment_status__in=["refunded", "partially_refunded"],
+        )
+
+        total_refunds = all_refund_orders.count()
+        total_refunded_amount = float(
+            all_refund_orders.aggregate(total=Sum("refunded_amount"))["total"] or 0
+        )
+
+        # Effective refunded qty: use full quantity for fully-refunded orders,
+        # refunded_quantity for partially-refunded ones.
+        effective_qty = Case(
+            When(order__payment_status="refunded", then=F("quantity")),
+            default=F("refunded_quantity"),
+            output_field=DecimalField(max_digits=10, decimal_places=2),
+        )
+        effective_revenue = ExpressionWrapper(
+            effective_qty * F("unit_price"),
+            output_field=DecimalField(max_digits=12, decimal_places=2),
+        )
+        top_refunded_products = list(
+            OrderItem.objects.filter(order__in=all_refund_orders)
+            .annotate(eff_qty=effective_qty)
+            .filter(eff_qty__gt=0)
+            .values("product_id", "product_name")
+            .annotate(
+                refund_count=Count("order_id", distinct=True),
+                refunded_qty=Sum(effective_qty),
+                refunded_amount=Sum(effective_revenue),
+            )
+            .order_by("-refund_count", "-refunded_amount")[:5]
+        )
+
+        return Response(
+            {
+                "days": days,
+                "total_refunds": total_refunds,
+                "total_refunded_amount": total_refunded_amount,
+                "top_refunded_products": [
+                    {
+                        "product_id": row["product_id"],
+                        "name": row["product_name"],
+                        "refund_count": row["refund_count"] or 0,
+                        "refunded_quantity": row["refunded_qty"] or 0,
+                        "refunded_amount": float(row["refunded_amount"] or Decimal("0")),
+                    }
+                    for row in top_refunded_products
+                ],
+            }
+        )
+
+
 class AdminOrderStatusUpdateView(APIView):
     """POST /api/v1/orders/admin/<order_number>/status/"""
     permission_classes = ADMIN_API_PERMISSION_CLASSES
@@ -296,6 +407,7 @@ class AdminOrderStatusUpdateView(APIView):
                 new_status=serializer.validated_data["status"],
                 changed_by=request.user,
                 note=serializer.validated_data.get("note", ""),
+                force=serializer.validated_data.get("force", False),
             )
         except ValueError as e:
             return Response({"success": False, "message": str(e)}, status=status.HTTP_400_BAD_REQUEST)

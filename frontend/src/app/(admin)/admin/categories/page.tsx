@@ -6,7 +6,13 @@ import Image from "next/image";
 import api from "@/lib/api";
 import { absoluteMediaUrl } from "@/lib/media";
 import ConfirmModal from "@/components/admin/ConfirmModal";
-import { Plus, Pencil, Trash2, X, Loader2, Tag } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Loader2, Tag, AlertTriangle, PackageSearch, CheckSquare } from "lucide-react";
+
+interface InactiveProduct {
+  id: string;
+  name: string;
+  sku: string;
+}
 
 interface Category {
   id: string;
@@ -31,6 +37,10 @@ export default function AdminCategoriesPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingDelete, setPendingDelete] = useState<Category | null>(null);
+  const [reactivationCategoryId, setReactivationCategoryId] = useState<string | null>(null);
+  const [reactivationProducts, setReactivationProducts] = useState<InactiveProduct[]>([]);
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [activating, setActivating] = useState(false);
 
   const { data: categories, isLoading } = useQuery({
     queryKey: ["admin-categories-list"],
@@ -109,6 +119,8 @@ export default function AdminCategoriesPage() {
     setLoading(true);
     try {
       if (editing) {
+        const wasActive = editing.is_active;
+        const isReactivating = !wasActive && form.is_active;
         if (imageFile) {
           await api.patch(`/products/admin/categories/${editing.id}/`, buildFormData());
         } else {
@@ -117,7 +129,24 @@ export default function AdminCategoriesPage() {
             parent: form.parent || null,
           });
         }
-        toast.success("Category updated!");
+        qc.invalidateQueries({ queryKey: ["admin-categories-list"] });
+        qc.invalidateQueries({ queryKey: ["admin-categories"] });
+        qc.invalidateQueries({ queryKey: ["categories"] });
+        closeModal();
+        if (wasActive && !form.is_active) {
+          toast("Category disabled — all products in it are now hidden from the store.", { icon: "⚠️" });
+        } else if (isReactivating) {
+          const { data } = await api.get(`/products/admin/categories/${editing.id}/inactive-products/`);
+          if (data.length > 0) {
+            setReactivationProducts(data);
+            setSelectedProductIds(data.map((p: InactiveProduct) => p.id));
+            setReactivationCategoryId(editing.id);
+          } else {
+            toast.success("Category reactivated!");
+          }
+        } else {
+          toast.success("Category updated!");
+        }
       } else {
         if (imageFile) {
           await api.post("/products/admin/categories/", buildFormData());
@@ -125,11 +154,11 @@ export default function AdminCategoriesPage() {
           await api.post("/products/admin/categories/", { ...form, parent: form.parent || null });
         }
         toast.success("Category created!");
+        qc.invalidateQueries({ queryKey: ["admin-categories-list"] });
+        qc.invalidateQueries({ queryKey: ["admin-categories"] });
+        qc.invalidateQueries({ queryKey: ["categories"] });
+        closeModal();
       }
-      qc.invalidateQueries({ queryKey: ["admin-categories-list"] });
-      qc.invalidateQueries({ queryKey: ["admin-categories"] });
-      qc.invalidateQueries({ queryKey: ["categories"] });
-      closeModal();
     } catch (err: any) {
       toast.error(err?.response?.data?.errors?.[0]?.message || err?.response?.data?.message || "Failed to save category");
     } finally {
@@ -156,6 +185,39 @@ export default function AdminCategoriesPage() {
         err?.response?.data?.errors?.[0]?.message ||
         "Failed to delete category";
       toast.error(msg);
+    }
+  };
+
+  const closeReactivationModal = () => {
+    setReactivationCategoryId(null);
+    setReactivationProducts([]);
+    setSelectedProductIds([]);
+  };
+
+  const toggleProductSelection = (id: string) => {
+    setSelectedProductIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleActivateProducts = async (activateAll: boolean) => {
+    if (!reactivationCategoryId) return;
+    setActivating(true);
+    try {
+      const body = activateAll
+        ? { activate_all: true }
+        : { product_ids: selectedProductIds };
+      const { data } = await api.post(
+        `/products/admin/categories/${reactivationCategoryId}/activate-products/`,
+        body
+      );
+      toast.success(`${data.activated} product${data.activated !== 1 ? "s" : ""} reactivated!`);
+      qc.invalidateQueries({ queryKey: ["admin-products"] });
+      closeReactivationModal();
+    } catch {
+      toast.error("Failed to activate products");
+    } finally {
+      setActivating(false);
     }
   };
 
@@ -238,7 +300,7 @@ export default function AdminCategoriesPage() {
                     )}
                   </div>
                   <div className="flex flex-col gap-2 text-sm">
-                    <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
+                    <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={onPickImage} />
                     <button type="button" onClick={() => fileInputRef.current?.click()} className="btn-secondary text-xs py-1.5 px-3 w-fit">
                       {imagePreview ? "Change image" : "Upload image"}
                     </button>
@@ -286,15 +348,25 @@ export default function AdminCategoriesPage() {
                     ))}
                 </select>
               </div>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.is_active}
-                  onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
-                  className="w-4 h-4 accent-primary-600"
-                />
-                <span className="text-sm text-gray-700">Active (visible in store)</span>
-              </label>
+              <div>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.is_active}
+                    onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
+                    className="w-4 h-4 accent-primary-600"
+                  />
+                  <span className="text-sm text-gray-700">Active (visible in store)</span>
+                </label>
+                {editing?.is_active && !form.is_active && (
+                  <div className="flex items-start gap-2 mt-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
+                    <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-amber-800">
+                      Disabling this category will also hide <strong>all products</strong> in it from the store.
+                    </p>
+                  </div>
+                )}
+              </div>
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={closeModal} className="btn-secondary flex-1">Cancel</button>
                 <button type="submit" disabled={loading} className="btn-primary flex-1 flex items-center justify-center gap-2">
@@ -310,15 +382,102 @@ export default function AdminCategoriesPage() {
       <ConfirmModal
         open={pendingDelete != null}
         title={pendingDelete ? `Delete "${pendingDelete.name}"?` : ""}
-        description={
-          "This action is permanent and cannot be undone.\n\nThis category cannot be deleted because it contains products."
-        }
+        description="This will permanently delete the category. This action cannot be undone."
         confirmText="Delete"
         cancelText="Cancel"
         variant="danger"
         onConfirm={confirmCategoryDelete}
         onCancel={() => setPendingDelete(null)}
       />
+
+      {reactivationCategoryId && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-primary-50 rounded-xl flex items-center justify-center">
+                  <PackageSearch className="w-5 h-5 text-primary-700" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900">Reactivate Products?</h3>
+                  <p className="text-xs text-gray-500">{reactivationProducts.length} disabled product{reactivationProducts.length !== 1 ? "s" : ""} in this category</p>
+                </div>
+              </div>
+              <button type="button" onClick={closeReactivationModal} className="p-1 rounded-lg hover:bg-gray-100">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-4 space-y-2">
+              {reactivationProducts.map((product) => {
+                const checked = selectedProductIds.includes(product.id);
+                return (
+                  <label
+                    key={product.id}
+                    className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                      checked ? "border-primary-300 bg-primary-50" : "border-gray-100 hover:bg-gray-50"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleProductSelection(product.id)}
+                      className="w-4 h-4 accent-primary-600 flex-shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{product.name}</p>
+                      <p className="text-xs text-gray-400">{product.sku}</p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="p-4 border-t border-gray-100 space-y-2">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-500">{selectedProductIds.length} of {reactivationProducts.length} selected</span>
+                <button
+                  type="button"
+                  className="text-xs text-primary-600 hover:underline"
+                  onClick={() =>
+                    setSelectedProductIds(
+                      selectedProductIds.length === reactivationProducts.length
+                        ? []
+                        : reactivationProducts.map((p) => p.id)
+                    )
+                  }
+                >
+                  {selectedProductIds.length === reactivationProducts.length ? "Deselect all" : "Select all"}
+                </button>
+              </div>
+              <button
+                type="button"
+                disabled={activating}
+                onClick={() => handleActivateProducts(true)}
+                className="btn-primary w-full flex items-center justify-center gap-2"
+              >
+                {activating ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckSquare className="w-4 h-4" />}
+                Activate All ({reactivationProducts.length})
+              </button>
+              <button
+                type="button"
+                disabled={activating || selectedProductIds.length === 0}
+                onClick={() => handleActivateProducts(false)}
+                className="btn-secondary w-full flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                Activate Selected ({selectedProductIds.length})
+              </button>
+              <button
+                type="button"
+                onClick={closeReactivationModal}
+                className="w-full text-sm text-gray-500 hover:text-gray-700 py-2 text-center"
+              >
+                Skip — keep them hidden
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

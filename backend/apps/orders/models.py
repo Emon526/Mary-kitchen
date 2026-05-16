@@ -49,6 +49,8 @@ class Order(BaseModel):
     stripe_checkout_session_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
     session_id = models.CharField(max_length=255, null=True, blank=True)
 
+    refunded_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+
     has_out_of_stock_items = models.BooleanField(default=False)
     admin_notified_out_of_stock = models.BooleanField(default=False)
     confirmation_email_sent = models.BooleanField(default=False)
@@ -113,6 +115,7 @@ class OrderItem(BaseModel):
     variant_name = models.CharField(max_length=200, blank=True)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     quantity = models.PositiveIntegerField()
+    refunded_quantity = models.PositiveIntegerField(default=0)
     was_out_of_stock = models.BooleanField(default=False)
 
     class Meta:

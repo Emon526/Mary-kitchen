@@ -79,6 +79,7 @@ export function getStatusColor(status: string): string {
     delivered: "bg-green-100 text-green-800",
     cancelled: "bg-red-100 text-red-800",
     refunded: "bg-gray-100 text-gray-800",
+    partially_refunded: "bg-orange-100 text-orange-800",
     paid: "bg-green-100 text-green-800",
     unpaid: "bg-red-100 text-red-800",
     failed: "bg-red-100 text-red-800",

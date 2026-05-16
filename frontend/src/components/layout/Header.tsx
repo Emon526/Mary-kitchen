@@ -9,6 +9,9 @@ import { AlertCircle, ShoppingCart, User, Search, Menu, X, ShoppingBag, Bell, Lo
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
+import { useStoreProfile } from "@/hooks/useStoreProfile";
+
+type NavCategory = { id: string; name: string; slug: string };
 
 type ProductSuggestion = {
   id: string;
@@ -23,6 +26,7 @@ export default function Header() {
   const router = useRouter();
   const { cart, fetchCart } = useCartStore();
   const { user, isAuthenticated, logout } = useAuthStore();
+  const { data: storeProfile } = useStoreProfile();
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -30,6 +34,7 @@ export default function Header() {
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const searchRef = useRef<HTMLFormElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   const { data: unreadCount } = useQuery({
     queryKey: ["unread-notifications"],
@@ -39,9 +44,17 @@ export default function Header() {
     refetchOnWindowFocus: true,
   });
 
+  const { data: categoriesData } = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => api.get("/products/categories/").then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const navCategories: NavCategory[] = categoriesData?.results ?? categoriesData ?? [];
+
   useEffect(() => {
     if (isAuthenticated) fetchCart();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, fetchCart]);
 
   useEffect(() => {
     const query = search.trim();
@@ -79,11 +92,10 @@ export default function Header() {
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (!searchRef.current?.contains(event.target as Node)) {
-        setShowDropdown(false);
-      }
+      const target = event.target as Node;
+      if (!searchRef.current?.contains(target)) setShowDropdown(false);
+      if (!userMenuRef.current?.contains(target)) setUserMenuOpen(false);
     };
-
     window.addEventListener("click", handleClickOutside);
     return () => window.removeEventListener("click", handleClickOutside);
   }, []);
@@ -104,8 +116,11 @@ export default function Header() {
   };
 
   const handleLogout = async () => {
-    await logout();
-    router.push("/");
+    try {
+      await logout();
+    } finally {
+      router.push("/");
+    }
   };
 
   const cartCount = cart?.items?.length || 0;
@@ -120,8 +135,12 @@ export default function Header() {
         <div className="flex items-center gap-4 py-3">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 font-bold text-xl flex-shrink-0">
-            <ShoppingBag className="w-7 h-7" />
-            <span className="hidden sm:block">Mary Kitchen</span>
+            {storeProfile?.logo_url ? (
+              <Image src={storeProfile.logo_url} alt={storeProfile.name} width={32} height={32} className="w-8 h-8 rounded-lg object-cover" />
+            ) : (
+              <ShoppingBag className="w-7 h-7" />
+            )}
+            <span className="hidden sm:block">{storeProfile?.name || "Mary Kitchen"}</span>
           </Link>
 
           {/* Search */}
@@ -200,7 +219,7 @@ export default function Header() {
                 <Bell className="w-6 h-6" />
                 {unreadCount > 0 && (
                   <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
-                    {unreadCount}
+                    {unreadCount > 9 ? "9+" : unreadCount}
                   </span>
                 )}
               </Link>
@@ -208,7 +227,7 @@ export default function Header() {
 
             {/* User Menu */}
             {isAuthenticated ? (
-              <div className="relative">
+              <div className="relative" ref={userMenuRef}>
                 <button
                   onClick={() => setUserMenuOpen(!userMenuOpen)}
                   className="flex items-center gap-2 p-2 hover:bg-primary-600 rounded-lg transition-colors"
@@ -253,24 +272,28 @@ export default function Header() {
       {/* Nav bar */}
       <div className="bg-primary-800 hidden md:block">
         <div className="container-xl">
-          <nav className="flex gap-1 py-1">
-            {[
-              { label: "All Products", href: "/products" },
-              { label: "Fish & Seafood", href: "/products?category=fish-seafood" },
-              { label: "Meat & Poultry", href: "/products?category=meat-poultry" },
-              { label: "Vegetables", href: "/products?category=vegetables" },
-              { label: "Rice & Grains", href: "/products?category=rice-grains" },
-              { label: "Oil & Condiments", href: "/products?category=oil-condiments" },
-              { label: "Deals", href: "/products/deals" },
-            ].map((item) => (
+          <nav className="flex gap-1 py-1 overflow-x-auto">
+            <Link
+              href="/products"
+              className="px-3 py-1.5 text-sm text-primary-100 hover:text-white hover:bg-primary-700 rounded-lg transition-colors whitespace-nowrap"
+            >
+              All Products
+            </Link>
+            {navCategories.map((cat) => (
               <Link
-                key={item.href}
-                href={item.href}
-                className="px-3 py-1.5 text-sm text-primary-100 hover:text-white hover:bg-primary-700 rounded-lg transition-colors"
+                key={cat.id}
+                href={`/products?category=${cat.slug}`}
+                className="px-3 py-1.5 text-sm text-primary-100 hover:text-white hover:bg-primary-700 rounded-lg transition-colors whitespace-nowrap"
               >
-                {item.label}
+                {cat.name}
               </Link>
             ))}
+            <Link
+              href="/products/deals"
+              className="px-3 py-1.5 text-sm text-primary-100 hover:text-white hover:bg-primary-700 rounded-lg transition-colors whitespace-nowrap"
+            >
+              Deals
+            </Link>
           </nav>
         </div>
       </div>
@@ -279,13 +302,41 @@ export default function Header() {
       {menuOpen && (
         <div className="md:hidden bg-primary-800 border-t border-primary-600">
           <nav className="container-xl py-2 flex flex-col">
-            {["/products", "/cart", "/orders", "/profile"].map((href) => (
-              <Link key={href} href={href} onClick={() => setMenuOpen(false)}
-                className="px-3 py-2 text-sm text-primary-100 hover:text-white capitalize"
+            <Link href="/products" onClick={() => setMenuOpen(false)}
+              className="px-3 py-2 text-sm text-primary-100 hover:text-white"
+            >
+              All Products
+            </Link>
+            {navCategories.map((cat) => (
+              <Link
+                key={cat.id}
+                href={`/products?category=${cat.slug}`}
+                onClick={() => setMenuOpen(false)}
+                className="px-3 py-2 text-sm text-primary-100 hover:text-white"
               >
-                {href.slice(1)}
+                {cat.name}
               </Link>
             ))}
+            <Link href="/products/deals" onClick={() => setMenuOpen(false)}
+              className="px-3 py-2 text-sm text-primary-100 hover:text-white"
+            >
+              Deals
+            </Link>
+            <Link href="/cart" onClick={() => setMenuOpen(false)}
+              className="px-3 py-2 text-sm text-primary-100 hover:text-white"
+            >
+              Cart
+            </Link>
+            <Link href="/orders" onClick={() => setMenuOpen(false)}
+              className="px-3 py-2 text-sm text-primary-100 hover:text-white"
+            >
+              Orders
+            </Link>
+            <Link href="/profile" onClick={() => setMenuOpen(false)}
+              className="px-3 py-2 text-sm text-primary-100 hover:text-white"
+            >
+              Profile
+            </Link>
           </nav>
         </div>
       )}

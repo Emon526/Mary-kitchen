@@ -104,13 +104,14 @@ export default function ProductCard({ product }: ProductCardProps) {
   return (
     <Link href={`/products/${product.slug}`} className="card group flex flex-col">
       {/* Image */}
-      <div className="relative aspect-square overflow-hidden rounded-t-xl bg-gray-100">
+      <div className="relative overflow-hidden rounded-t-xl bg-gray-100 h-40 sm:h-44 md:h-48">
         {product.primary_image ? (
           <Image
             src={product.primary_image}
             alt={product.name}
             fill
-            className="object-cover group-hover:scale-105 transition-transform duration-300"
+            sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw"
+            className="object-contain group-hover:scale-105 transition-transform duration-300"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-5xl text-gray-300">🛒</div>

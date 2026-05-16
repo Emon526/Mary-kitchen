@@ -1,6 +1,6 @@
 """Product system: Category, Product, Variant, Attributes, Images."""
 from django.core.validators import MinValueValidator, MaxValueValidator
-from django.db import models
+from django.db import models, transaction
 from django.utils.text import slugify
 
 from core.mixins import BaseModel
@@ -29,7 +29,32 @@ class Category(BaseModel):
     def save(self, *args, **kwargs):
         if not self.slug:
             self.slug = slugify(self.name)
-        super().save(*args, **kwargs)
+
+        being_disabled = False
+        update_fields = kwargs.get("update_fields")
+        if self.pk and (update_fields is None or "is_active" in update_fields):
+            prev = Category.objects.filter(pk=self.pk).values_list("is_active", flat=True).first()
+            if prev is True and not self.is_active:
+                being_disabled = True
+
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            if being_disabled:
+                self._cascade_disable()
+
+    def _cascade_disable(self):
+        """Bulk-disable all products and subcategories when this category is disabled."""
+        descendant_ids = []
+        queue = list(Category.objects.filter(parent=self).values_list("pk", flat=True))
+        while queue:
+            descendant_ids.extend(queue)
+            queue = list(Category.objects.filter(parent_id__in=queue).values_list("pk", flat=True))
+
+        if descendant_ids:
+            Category.objects.filter(pk__in=descendant_ids).update(is_active=False)
+
+        all_ids = [self.pk] + descendant_ids
+        Product.objects.filter(category_id__in=all_ids, is_active=True).update(is_active=False)
 
     @property
     def is_root(self):

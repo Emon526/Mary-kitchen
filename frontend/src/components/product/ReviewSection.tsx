@@ -16,6 +16,7 @@ export default function ReviewSection({ productId }: { productId: string }) {
   const [body, setBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [showForm, setShowForm] = useState(false);
 
   const { data: reviews, isLoading } = useQuery({
     queryKey: ["reviews", productId],
@@ -30,10 +31,12 @@ export default function ReviewSection({ productId }: { productId: string }) {
     setTitle(myReview.title || "");
     setBody(myReview.body || "");
     setEditing(true);
+    setShowForm(true);
   };
 
   const cancelEdit = () => {
     setEditing(false);
+    setShowForm(false);
     setRating(0); setTitle(""); setBody("");
   };
 
@@ -51,7 +54,7 @@ export default function ReviewSection({ productId }: { productId: string }) {
         toast.success("Review submitted!");
       }
       qc.invalidateQueries({ queryKey: ["reviews", productId] });
-      setRating(0); setTitle(""); setBody("");
+      setRating(0); setTitle(""); setBody(""); setShowForm(false);
     } catch (e: any) {
       toast.error(e?.response?.data?.errors?.[0]?.message || "Failed to submit review");
     } finally {
@@ -90,39 +93,51 @@ export default function ReviewSection({ productId }: { productId: string }) {
             <p className="text-xs text-gray-400 mt-2">{formatDate(myReview.created_at)}</p>
           </div>
         ) : (
-          /* Write / edit form */
-          <div className="card p-6 mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">{editing ? "Edit Your Review" : "Write a Review"}</h3>
-              {editing && (
-                <button onClick={cancelEdit} className="text-gray-400 hover:text-gray-600">
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <p className="text-sm text-gray-600 mb-2">Rating</p>
-                <div className="flex gap-1">
-                  {[1, 2, 3, 4, 5].map((s) => (
-                    <button key={s} type="button" onMouseEnter={() => setHoverRating(s)} onMouseLeave={() => setHoverRating(0)} onClick={() => setRating(s)}>
-                      <Star className={`w-7 h-7 transition-colors ${s <= (hoverRating || rating) ? "text-amber-400 fill-amber-400" : "text-gray-300"}`} />
-                    </button>
-                  ))}
+          /* Write / edit form — rendered only when the user explicitly opens it */
+          <div className="mb-8">
+            {!showForm && !editing ? (
+              <button
+                onClick={() => setShowForm(true)}
+                className="btn-primary flex items-center gap-1.5 text-sm"
+              >
+                <Pencil className="w-4 h-4" /> Write a Review
+              </button>
+            ) : (
+              <div className="card p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-gray-900">{editing ? "Edit Your Review" : "Write a Review"}</h3>
+                  <button
+                    onClick={() => { cancelEdit(); setShowForm(false); }}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div>
+                    <p className="text-sm text-gray-600 mb-2">Rating</p>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <button key={s} type="button" onMouseEnter={() => setHoverRating(s)} onMouseLeave={() => setHoverRating(0)} onClick={() => setRating(s)}>
+                          <Star className={`w-7 h-7 transition-colors ${s <= (hoverRating || rating) ? "text-amber-400 fill-amber-400" : "text-gray-300"}`} />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Review title (optional)" className="input-field" />
+                  <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Share your experience..." className="input-field min-h-[100px] resize-none" />
+                  <div className="flex gap-2">
+                    <button type="submit" disabled={submitting} className="btn-primary flex items-center gap-1.5">
+                      <Check className="w-4 h-4" />
+                      {submitting ? "Saving..." : editing ? "Save Changes" : "Submit Review"}
+                    </button>
+                    <button type="button" onClick={() => { cancelEdit(); setShowForm(false); }} className="btn-secondary">
+                      Cancel
+                    </button>
+                  </div>
+                </form>
               </div>
-              <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Review title (optional)" className="input-field" />
-              <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Share your experience..." className="input-field min-h-[100px] resize-none" />
-              <div className="flex gap-2">
-                <button type="submit" disabled={submitting} className="btn-primary flex items-center gap-1.5">
-                  <Check className="w-4 h-4" />
-                  {submitting ? "Saving..." : editing ? "Save Changes" : "Submit Review"}
-                </button>
-                {editing && (
-                  <button type="button" onClick={cancelEdit} className="btn-secondary">Cancel</button>
-                )}
-              </div>
-            </form>
+            )}
           </div>
         )
       )}

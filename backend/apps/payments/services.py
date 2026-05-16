@@ -2,6 +2,7 @@
 import stripe
 from decimal import ROUND_HALF_UP, Decimal
 from django.conf import settings
+from django.db import transaction
 
 from apps.cart.models import Cart
 from apps.orders.models import Order
@@ -300,22 +301,139 @@ def handle_payment_failure(payment_intent_id: str, failure_message: str = "") ->
         return None
 
 
-def refund_payment(order: Order, reason: str = "") -> dict:
-    """Initiate a Stripe refund."""
-    payment = order.payments.filter(status="succeeded").last()
+def refund_payment(
+    order: Order,
+    reason: str = "",
+    amount: int | None = None,
+    item_ids: list | None = None,
+) -> dict:
+    """Initiate a Stripe refund — full, partial by amount, or partial by item selection.
+
+    Args:
+        order:    The order to refund.
+        reason:   Human-readable reason stored in metadata / history.
+        amount:   Explicit cents to refund.  Calculated from item_ids when provided.
+                  ``None`` with no item_ids = full refund.
+        item_ids: List of OrderItem UUIDs to refund (all their quantities).
+                  When supplied, the refund amount is computed from those items
+                  and each item's refunded_quantity is updated.
+    """
+    from apps.orders.models import OrderItem, OrderStatusHistory
+
+    # Quick pre-flight — no locks, these facts don't change concurrently.
+    if order.status == "pending":
+        raise ValueError("Cannot refund an order whose payment has not been confirmed yet.")
+    if order.status == "refunded":
+        raise ValueError("This order has already been fully refunded.")
+
+    payment = order.payments.filter(status="succeeded").order_by("-created_at").first()
     if not payment:
         raise ValueError("No successful payment found for this order.")
+    if not payment.stripe_payment_intent_id:
+        raise ValueError("No Stripe PaymentIntent ID associated with this payment.")
 
-    refund = stripe.Refund.create(
-        payment_intent=payment.stripe_payment_intent_id,
-        reason="requested_by_customer",
-        metadata={"order_number": order.order_number, "reason": reason},
-    )
+    # Validate item_ids structure before acquiring the lock.
+    if item_ids and not OrderItem.objects.filter(id__in=item_ids, order=order).exists():
+        raise ValueError("None of the specified item IDs belong to this order.")
 
-    payment.status = "refunded"
-    payment.save(update_fields=["status"])
+    with transaction.atomic():
+        # ── Lock order to serialise concurrent refund requests ────────────
+        order = Order.objects.select_for_update().get(pk=order.pk)
 
-    order.payment_status = "refunded"
-    order.save(update_fields=["payment_status"])
+        if order.status == "refunded":
+            raise ValueError("This order has already been fully refunded.")
 
-    return {"refund_id": refund.id, "status": refund.status}
+        # ── Resolve items and compute amount under the lock ───────────────
+        items_to_refund: list[OrderItem] = []
+        if item_ids:
+            items_to_refund = list(
+                OrderItem.objects.select_for_update().filter(id__in=item_ids, order=order)
+            )
+            already_fully_refunded = [i for i in items_to_refund if i.refunded_quantity >= i.quantity]
+            if already_fully_refunded:
+                names = ", ".join(i.product_name for i in already_fully_refunded)
+                raise ValueError(f"Already fully refunded: {names}")
+            amount = _money_to_cents(
+                sum((i.quantity - i.refunded_quantity) * i.unit_price for i in items_to_refund)
+            )
+
+        max_refundable = _money_to_cents(payment.amount) - _money_to_cents(order.refunded_amount)
+        if max_refundable <= 0:
+            raise ValueError("This order has already been fully refunded.")
+
+        refund_cents = amount if amount is not None else _money_to_cents(payment.amount)
+        if refund_cents > max_refundable:
+            raise ValueError(
+                f"Refund amount (${refund_cents / 100:.2f}) exceeds the remaining "
+                f"refundable balance (${max_refundable / 100:.2f})."
+            )
+
+        is_full_refund = refund_cents >= max_refundable
+
+        # ── Call Stripe inside the transaction to hold the row lock ───────
+        # Calling Stripe while holding a DB row lock serialises concurrent
+        # admin refund requests for the same order.  The trade-off is that
+        # the DB connection is held for the duration of the Stripe HTTP call
+        # (~1-2 s typical).  Acceptable for this low-frequency admin endpoint;
+        # a high-traffic app would use a distributed lock (Redis) instead.
+        refund = stripe.Refund.create(
+            payment_intent=payment.stripe_payment_intent_id,
+            amount=refund_cents,
+            reason="requested_by_customer",
+            metadata={"order_number": order.order_number, "reason": reason},
+        )
+
+        refund_decimal = Decimal(refund_cents) / Decimal("100")
+
+        # ── Update item-level tracking ────────────────────────────────────
+        if not items_to_refund and is_full_refund:
+            items_to_refund = list(OrderItem.objects.select_for_update().filter(order=order))
+
+        item_notes = []
+        for item in items_to_refund:
+            qty = item.quantity - item.refunded_quantity
+            if qty <= 0:
+                continue
+            item.refunded_quantity = item.quantity
+            item.save(update_fields=["refunded_quantity"])
+            item_notes.append(f"{item.product_name} ×{qty}")
+
+        # ── Update payment record ─────────────────────────────────────────
+        payment.status = "refunded" if is_full_refund else "partially_refunded"
+        payment.stripe_refund_id = refund.id
+        payment.refund_reason = reason
+        payment.save(update_fields=["status", "stripe_refund_id", "refund_reason"])
+
+        # ── Update order ──────────────────────────────────────────────────
+        order.refunded_amount += refund_decimal
+        old_status = order.status
+        if is_full_refund:
+            order.payment_status = "refunded"
+            order.status = "refunded"
+        else:
+            order.payment_status = "partially_refunded"
+        order.save(update_fields=["refunded_amount", "payment_status", "status"])
+
+        # ── Status history ────────────────────────────────────────────────
+        item_detail = f" Items: {', '.join(item_notes)}." if item_notes else ""
+        history_note = (
+            f"{'Full' if is_full_refund else 'Partial'} refund ${refund_decimal:.2f} AUD "
+            f"via Stripe (ID: {refund.id}).{item_detail}"
+            + (f" Reason: {reason}" if reason else "")
+        )
+        OrderStatusHistory.objects.create(
+            order=order,
+            from_status=old_status,
+            to_status=order.status,
+            note=history_note,
+        )
+
+    return {
+        "refund_id": refund.id,
+        "status": refund.status,
+        "amount_cents": refund.amount,
+        "amount_aud": float(refund_decimal),
+        "currency": refund.currency,
+        "is_full_refund": is_full_refund,
+        "items_refunded": item_notes,
+    }

@@ -6,7 +6,7 @@ import AdminOrderNotifications from "@/components/admin/AdminOrderNotifications"
 import { useAuthStore } from "@/store/authStore";
 import {
   LayoutDashboard, Package, ShoppingCart, Users,
-  Tag, Truck, ImageIcon, LogOut, ShoppingBag
+  Tag, Truck, ImageIcon, LogOut, ShoppingBag, Settings
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { label: "Categories", href: "/admin/categories", icon: Tag },
   { label: "Delivery Zones", href: "/admin/delivery", icon: Truck },
   { label: "Banners", href: "/admin/banners", icon: ImageIcon },
+  { label: "Store Settings", href: "/admin/settings", icon: Settings },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

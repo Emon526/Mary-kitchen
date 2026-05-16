@@ -7,13 +7,18 @@ from .models import Order, OrderItem, OrderStatusHistory
 
 class OrderItemSerializer(serializers.ModelSerializer):
     line_total = serializers.ReadOnlyField()
+    refundable_quantity = serializers.SerializerMethodField()
 
     class Meta:
         model = OrderItem
         fields = [
             "id", "product", "variant", "product_name", "variant_name",
-            "unit_price", "quantity", "line_total", "was_out_of_stock",
+            "unit_price", "quantity", "refunded_quantity", "refundable_quantity",
+            "line_total", "was_out_of_stock",
         ]
+
+    def get_refundable_quantity(self, obj):
+        return max(0, obj.quantity - obj.refunded_quantity)
 
 
 class OrderStatusHistorySerializer(serializers.ModelSerializer):
@@ -35,7 +40,7 @@ class OrderSerializer(serializers.ModelSerializer):
         fields = [
             "id", "order_number", "status", "order_type",
             "delivery_address", "delivery_zone_name", "delivery_fee", "distance_km",
-            "subtotal", "discount_amount", "total_amount",
+            "subtotal", "discount_amount", "total_amount", "refunded_amount",
             "payment_status", "stripe_payment_intent_id",
             "has_out_of_stock_items", "notes",
             "estimated_delivery_date", "delivered_at",
@@ -54,9 +59,13 @@ class CheckoutSerializer(serializers.Serializer):
     session_id = serializers.CharField(required=False, allow_blank=True, max_length=255)
 
 
+_ADMIN_UPDATABLE_STATUSES = [s[0] for s in Order.STATUS_CHOICES if s[0] != "refunded"]
+
+
 class AdminOrderStatusUpdateSerializer(serializers.Serializer):
-    status = serializers.ChoiceField(choices=[s[0] for s in Order.STATUS_CHOICES])
+    status = serializers.ChoiceField(choices=_ADMIN_UPDATABLE_STATUSES)
     note = serializers.CharField(required=False, allow_blank=True)
+    force = serializers.BooleanField(required=False, default=False)
 
 
 class AdminOrderSerializer(OrderSerializer):

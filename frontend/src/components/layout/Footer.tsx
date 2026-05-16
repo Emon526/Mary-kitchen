@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { ShoppingBag, MapPin, Phone, Mail, Shield } from "lucide-react";
+import { ShoppingBag, MapPin, Phone, Mail, Shield, Facebook, Instagram, Globe } from "lucide-react";
 import { useAuthStore } from "@/store/authStore";
+import { useStoreProfile } from "@/hooks/useStoreProfile";
 
 const SHOP_LINKS = [
   { label: "All Products", href: "/products" },
@@ -31,13 +32,39 @@ const INFO_LINKS = [
   { label: "Contact Us", href: "/contact" },
 ];
 
+function safeHref(url: string): string | undefined {
+  try {
+    const { protocol } = new URL(url);
+    return protocol === "https:" || protocol === "http:" ? url : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function telHref(phone: string): string {
+  return `tel:${phone.replace(/[\s\-().]/g, "")}`;
+}
+
 export default function Footer() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  // hasHydrated prevents a SSR/client mismatch: render guest links on both
-  // server and first client paint, then swap once localStorage is read.
   const hasHydrated = useAuthStore((s) => s.hasHydrated);
-  const accountLinks =
-    hasHydrated && isAuthenticated ? ACCOUNT_LINKS_AUTH : ACCOUNT_LINKS_GUEST;
+  const { data: store } = useStoreProfile();
+  const accountLinks = hasHydrated && isAuthenticated ? ACCOUNT_LINKS_AUTH : ACCOUNT_LINKS_GUEST;
+
+  const storeName = store?.name || "Mary Kitchen";
+  const description = store?.description || "Your local Darwin grocery & food marketplace. Fresh products delivered to your door.";
+
+  const addressParts = [
+    store?.address,
+    store?.suburb || store?.state
+      ? [store.suburb, store.state, store.postcode].filter(Boolean).join(" ")
+      : undefined,
+  ].filter(Boolean);
+
+  const facebookHref = store?.facebook ? safeHref(store.facebook) : undefined;
+  const instagramHref = store?.instagram ? safeHref(store.instagram) : undefined;
+  const websiteHref = store?.website ? safeHref(store.website) : undefined;
+  const hasSocial = facebookHref || instagramHref || websiteHref;
 
   return (
     <footer className="bg-gray-900 text-gray-300 pt-14 pb-6 mt-auto">
@@ -47,23 +74,51 @@ export default function Footer() {
           {/* Column 1 — Brand */}
           <div className="col-span-2 md:col-span-1">
             <Link href="/" className="flex items-center gap-2 text-white font-bold text-xl mb-3">
-              <ShoppingBag className="w-6 h-6 text-primary-400" /> Mary Kitchen
+              <ShoppingBag className="w-6 h-6 text-primary-400" />
+              {storeName}
             </Link>
-            <p className="text-sm text-gray-400 leading-relaxed mb-5">
-              Your local Darwin grocery & food marketplace. Fresh products delivered to your door.
-            </p>
+            <p className="text-sm text-gray-400 leading-relaxed mb-4">{description}</p>
+
             <div className="space-y-2.5 text-sm">
-              <p className="flex items-start gap-2 text-gray-400">
-                <MapPin className="w-4 h-4 text-primary-400 mt-0.5 flex-shrink-0" />
-                8/63 Winnellie Rd, Winnellie NT 0820
-              </p>
-              <a href="tel:0449529923" className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
-                <Phone className="w-4 h-4 text-primary-400" /> 0449 529 923
-              </a>
-              <a href="mailto:hello@marykitchen.com.au" className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
-                <Mail className="w-4 h-4 text-primary-400" /> hello@marykitchen.com.au
-              </a>
+              {addressParts.length > 0 && (
+                <p className="flex items-start gap-2 text-gray-400">
+                  <MapPin className="w-4 h-4 text-primary-400 mt-0.5 flex-shrink-0" />
+                  <span className="whitespace-pre-line">{addressParts.join("\n")}</span>
+                </p>
+              )}
+              {store?.phone && (
+                <a href={telHref(store.phone)} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
+                  <Phone className="w-4 h-4 text-primary-400" />
+                  {store.phone}
+                </a>
+              )}
+              {store?.email && (
+                <a href={`mailto:${store.email}`} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
+                  <Mail className="w-4 h-4 text-primary-400" />
+                  {store.email}
+                </a>
+              )}
             </div>
+
+            {hasSocial && (
+              <div className="flex items-center gap-3 mt-4">
+                {facebookHref && (
+                  <a href={facebookHref} target="_blank" rel="noopener noreferrer" aria-label="Facebook" className="text-gray-500 hover:text-white transition-colors">
+                    <Facebook className="w-4 h-4" />
+                  </a>
+                )}
+                {instagramHref && (
+                  <a href={instagramHref} target="_blank" rel="noopener noreferrer" aria-label="Instagram" className="text-gray-500 hover:text-white transition-colors">
+                    <Instagram className="w-4 h-4" />
+                  </a>
+                )}
+                {websiteHref && (
+                  <a href={websiteHref} target="_blank" rel="noopener noreferrer" aria-label="Website" className="text-gray-500 hover:text-white transition-colors">
+                    <Globe className="w-4 h-4" />
+                  </a>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Column 2 — Shop */}
@@ -111,7 +166,7 @@ export default function Footer() {
 
         {/* Bottom bar */}
         <div className="border-t border-gray-800 pt-6 flex flex-col sm:flex-row justify-between items-center gap-3 text-sm text-gray-500">
-          <p>© {new Date().getFullYear()} Mary Kitchen. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} {storeName}. All rights reserved.</p>
           <div className="flex items-center gap-2">
             <Shield className="w-4 h-4 text-green-500" />
             <span>Secure payments by</span>

@@ -2,11 +2,22 @@
 import { useState } from "react";
 import { MapPin, Phone, Mail, Clock, Send, Loader2, CheckCircle } from "lucide-react";
 import toast from "react-hot-toast";
+import { useStoreProfile } from "@/hooks/useStoreProfile";
+
+type ContactCard = { icon: React.ElementType; label: string; value: string; href?: string };
+type HoursRow = { day: string; time: string; closed: boolean };
+
+const FALLBACK_CARDS: ContactCard[] = [
+  { icon: MapPin, label: "Our Store", value: "8/63 Winnellie Rd\nWinnellie NT 0820\nAustralia" },
+  { icon: Phone, label: "Phone", value: "0449 529 923", href: "tel:0449529923" },
+  { icon: Mail, label: "Email", value: "hello@marykitchen.com.au", href: "mailto:hello@marykitchen.com.au" },
+];
 
 export default function ContactPage() {
   const [form, setForm] = useState({ name: "", email: "", subject: "", message: "" });
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const { data: store } = useStoreProfile();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -18,7 +29,41 @@ export default function ContactPage() {
   };
 
   const update = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
-    setForm({ ...form, [field]: e.target.value });
+    setForm((prev) => ({ ...prev, [field]: e.target.value }));
+
+  const addressValue = store
+    ? [
+        store.address,
+        [store.suburb, store.state, store.postcode].filter(Boolean).join(" "),
+        "Australia",
+      ].filter(Boolean).join("\n")
+    : "";
+
+  const is247 = store?.opening_hours
+    ? store.opening_hours.split("\n").every((l) => l.includes("12:00 AM – 11:59 PM"))
+    : false;
+
+  const hoursRows: HoursRow[] = store?.opening_hours && !is247
+    ? store.opening_hours.split("\n").map((line) => {
+        const colonIdx = line.indexOf(":");
+        if (colonIdx === -1) return { day: line, time: "", closed: false };
+        const day = line.slice(0, colonIdx).trim();
+        const time = line.slice(colonIdx + 1).trim();
+        return { day, time, closed: time === "Closed" };
+      })
+    : [
+        { day: "Monday – Friday", time: "9:00 AM – 5:00 PM", closed: false },
+        { day: "Saturday", time: "10:00 AM – 3:00 PM", closed: false },
+        { day: "Sunday", time: "", closed: true },
+      ];
+
+  const cards: ContactCard[] = store
+    ? [
+        store.address && { icon: MapPin, label: "Our Store", value: addressValue },
+        store.phone && { icon: Phone, label: "Phone", value: store.phone, href: `tel:${store.phone.replace(/[\s\-().]/g, "")}` },
+        store.email && { icon: Mail, label: "Email", value: store.email, href: `mailto:${store.email}` },
+      ].filter((c): c is ContactCard => Boolean(c))
+    : FALLBACK_CARDS;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -39,11 +84,7 @@ export default function ContactPage() {
           <div className="lg:col-span-2 space-y-5">
             <h2 className="text-xl font-bold text-gray-900">Get in Touch</h2>
 
-            {[
-              { icon: MapPin, label: "Our Store", value: "8/63 Winnellie Rd\nWinnellie NT 0820\nAustralia" },
-              { icon: Phone, label: "Phone", value: "0449 529 923", href: "tel:0449529923" },
-              { icon: Mail, label: "Email", value: "hello@marykitchen.com.au", href: "mailto:hello@marykitchen.com.au" },
-            ].map(({ icon: Icon, label, value, href }) => (
+            {cards.map(({ icon: Icon, label, value, href }) => (
               <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-start gap-4">
                 <div className="w-10 h-10 bg-primary-50 rounded-xl flex items-center justify-center flex-shrink-0">
                   <Icon className="w-5 h-5 text-primary-700" />
@@ -65,18 +106,27 @@ export default function ContactPage() {
               </div>
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Opening Hours</p>
-                <div className="space-y-1 text-sm text-gray-700">
-                  {[
-                    ["Monday – Friday", "9:00 AM – 6:00 PM"],
-                    ["Saturday", "9:00 AM – 4:00 PM"],
-                    ["Sunday", "10:00 AM – 2:00 PM"],
-                  ].map(([day, time]) => (
-                    <div key={day} className="flex justify-between gap-4">
-                      <span className="text-gray-500">{day}</span>
-                      <span className="font-medium">{time}</span>
-                    </div>
-                  ))}
-                </div>
+                {is247 ? (
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 bg-green-50 text-green-700 border border-green-200 text-sm font-semibold px-3 py-1 rounded-full">
+                      <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                      Open 24/7
+                    </span>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 text-sm">
+                    {hoursRows.map(({ day, time, closed }) => (
+                      <div key={day} className="flex justify-between gap-4">
+                        <span className="text-gray-500">{day}</span>
+                        {closed ? (
+                          <span className="text-red-400 font-medium">Closed</span>
+                        ) : (
+                          <span className="font-medium text-gray-700">{time}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -89,7 +139,10 @@ export default function ContactPage() {
                   <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
                   <h3 className="text-xl font-bold text-gray-900 mb-2">Message Sent!</h3>
                   <p className="text-gray-500">Thank you for reaching out. We'll get back to you within 24 hours.</p>
-                  <button onClick={() => { setSent(false); setForm({ name: "", email: "", subject: "", message: "" }); }} className="btn-primary mt-6">
+                  <button
+                    onClick={() => { setSent(false); setForm({ name: "", email: "", subject: "", message: "" }); }}
+                    className="btn-primary mt-6"
+                  >
                     Send Another Message
                   </button>
                 </div>

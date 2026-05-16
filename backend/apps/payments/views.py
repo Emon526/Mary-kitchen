@@ -1,4 +1,5 @@
 """Payment views – Stripe integration."""
+import uuid
 import stripe
 from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
@@ -152,17 +153,74 @@ class PaymentListView(APIView):
 
 
 class RefundView(APIView):
-    """POST /api/v1/payments/refund/ – admin-initiated refund."""
+    """POST /api/v1/payments/refund/ – admin-initiated refund.
+
+    Body:
+        order_number (str):       Required.
+        reason       (str):       Optional human-readable reason.
+        item_ids     (list[str]): Optional UUIDs of OrderItems to refund.
+                                  Amount is calculated automatically from the items.
+        amount_cents (int):       Optional explicit cents. Used only when item_ids
+                                  is not supplied. Omit both for a full refund.
+    """
     permission_classes = ADMIN_API_PERMISSION_CLASSES
 
     def post(self, request):
         order_number = request.data.get("order_number")
         reason = request.data.get("reason", "")
+        item_ids = request.data.get("item_ids")
+        amount_cents = request.data.get("amount_cents")
+
+        if not order_number:
+            return Response(
+                {"success": False, "message": "order_number is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if item_ids is not None:
+            if not isinstance(item_ids, list):
+                return Response(
+                    {"success": False, "message": "item_ids must be a list of UUIDs."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            for _id in item_ids:
+                try:
+                    uuid.UUID(str(_id))
+                except (ValueError, AttributeError):
+                    return Response(
+                        {"success": False, "message": f"Invalid UUID in item_ids: {_id!r}"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+        if not item_ids and amount_cents is not None:
+            try:
+                amount_cents = int(amount_cents)
+                if amount_cents <= 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                return Response(
+                    {"success": False, "message": "amount_cents must be a positive integer."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         try:
-            order = Order.objects.get(order_number=order_number)
-            result = refund_payment(order, reason)
+            order = Order.objects.prefetch_related("items").get(order_number=order_number)
+            result = refund_payment(
+                order,
+                reason,
+                amount=amount_cents if not item_ids else None,
+                item_ids=item_ids or None,
+            )
             return Response({"success": True, "data": result})
-        except (Order.DoesNotExist, ValueError) as e:
+        except Order.DoesNotExist:
+            return Response(
+                {"success": False, "message": "Order not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except ValueError as e:
             return Response({"success": False, "message": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except stripe.error.StripeError as e:
-            return Response({"success": False, "message": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            msg = (getattr(e, "user_message", None)
+                   or (e.error.message if hasattr(e, "error") and e.error else None)
+                   or "Stripe refund failed. Please try again.")
+            return Response({"success": False, "message": msg}, status=status.HTTP_400_BAD_REQUEST)

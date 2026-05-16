@@ -118,16 +118,17 @@ export default function ProductDetailPage() {
         <span className="text-gray-900 font-medium truncate max-w-xs">{product.name}</span>
       </nav>
 
-      <div className="grid md:grid-cols-2 gap-8 lg:gap-12">
+      <div className="grid md:grid-cols-2 gap-6 lg:gap-12">
         {/* Images */}
         <div>
-          <div className="relative aspect-square rounded-2xl overflow-hidden bg-gray-100 mb-3">
+          <div className="relative h-64 sm:h-80 md:h-auto md:aspect-square rounded-2xl overflow-hidden bg-gray-100 mb-3">
             {images[activeImage] && primaryImageSrc(activeImage) ? (
               <Image
                 src={primaryImageSrc(activeImage)!}
                 alt={images[activeImage].alt_text || product.name}
                 fill
-                className="object-cover"
+                sizes="(max-width: 768px) 100vw, 50vw"
+                className="object-contain"
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-gray-300 text-6xl">🛒</div>
@@ -223,7 +224,7 @@ export default function ProductDetailPage() {
           )}
 
           {/* Qty + Add to Cart */}
-          <div className="flex items-center gap-3 mb-4">
+          <div className="flex flex-wrap items-center gap-3 mb-4">
             <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden">
               <button
                 onClick={() => setQuantity(Math.max(1, quantity - 1))}
