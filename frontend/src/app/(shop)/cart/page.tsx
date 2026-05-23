@@ -218,7 +218,7 @@ export default function CartPage() {
                     ? `Available items (${validItems.length})`
                     : `Subtotal (${cart?.total_items} items)`}
                 </span>
-                <span>{formatCurrency(validItems.reduce((sum, i) => sum + i.line_total, 0))}</span>
+                <span>{formatCurrency(validItems.reduce((sum: number, i) => sum + (Number(i.line_total) || 0), 0))}</span>
               </div>
               {hasInvalid && (
                 <div className="flex justify-between text-xs text-red-500">
@@ -234,7 +234,7 @@ export default function CartPage() {
             <div className="flex justify-between font-bold text-base border-t pt-3 mb-5">
               <span>Subtotal</span>
               <span className="text-primary-700">
-                {formatCurrency(validItems.reduce((sum, i) => sum + i.line_total, 0))}
+                {formatCurrency(validItems.reduce((sum: number, i) => sum + (Number(i.line_total) || 0), 0))}
               </span>
             </div>
 

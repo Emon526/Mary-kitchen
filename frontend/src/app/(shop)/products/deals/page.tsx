@@ -1,4 +1,5 @@
 "use client";
+import { Suspense } from "react";
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -10,7 +11,7 @@ import CategoryFilterSelect from "@/components/product/CategoryFilterSelect";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Search, SlidersHorizontal, Tag } from "lucide-react";
 
-export default function DealsPage() {
+function DealsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [showFilters, setShowFilters] = useState(false);
@@ -43,7 +44,6 @@ export default function DealsPage() {
       const r = await api.get(dealsUrl);
       const body = r.data;
       if (process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
         console.debug("[/products/deals/]", { count: body?.count, page: body?.current_page, results: body?.results?.length });
       }
       return body;
@@ -187,5 +187,40 @@ export default function DealsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function DealsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="container-xl py-8">
+          {/* Header skeleton */}
+          <div className="flex justify-between mb-6">
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-32 rounded" />
+              <Skeleton className="h-8 w-24 rounded" />
+              <Skeleton className="h-4 w-64 rounded" />
+            </div>
+            <Skeleton className="h-4 w-32 rounded self-end" />
+          </div>
+          {/* Search bar skeleton */}
+          <div className="flex gap-4 mb-6">
+            <Skeleton className="h-10 flex-1 rounded-lg" />
+            <Skeleton className="h-10 w-24 rounded-lg" />
+            <Skeleton className="h-10 w-48 rounded-lg" />
+            <Skeleton className="h-10 w-28 rounded-lg" />
+          </div>
+          {/* Products grid skeleton */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-72 rounded-xl" />
+            ))}
+          </div>
+        </div>
+      }
+    >
+      <DealsPageInner />
+    </Suspense>
   );
 }

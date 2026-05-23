@@ -1,4 +1,5 @@
 "use client";
+import { Suspense } from "react";
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -9,7 +10,7 @@ import CategoryFilterSelect from "@/components/product/CategoryFilterSelect";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Search, SlidersHorizontal } from "lucide-react";
 
-export default function ProductsPage() {
+function ProductsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [showFilters, setShowFilters] = useState(false);
@@ -154,5 +155,31 @@ export default function ProductsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ProductsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="container-xl py-8">
+          {/* Search bar skeleton */}
+          <div className="flex gap-4 mb-6">
+            <Skeleton className="h-10 flex-1 rounded-lg" />
+            <Skeleton className="h-10 w-24 rounded-lg" />
+            <Skeleton className="h-10 w-48 rounded-lg" />
+            <Skeleton className="h-10 w-28 rounded-lg" />
+          </div>
+          {/* Products grid skeleton */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <Skeleton key={i} className="h-60 rounded-xl" />
+            ))}
+          </div>
+        </div>
+      }
+    >
+      <ProductsPageInner />
+    </Suspense>
   );
 }

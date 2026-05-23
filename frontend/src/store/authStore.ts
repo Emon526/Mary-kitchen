@@ -5,10 +5,10 @@
  * false and flips to true once localStorage has been read. Protected routes
  * must wait for `hasHydrated` before acting on `isAuthenticated`.
  */
-import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
-import Cookies from "js-cookie";
 import api from "@/lib/api";
+import Cookies from "js-cookie";
+import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 
 export interface User {
   id: string;
@@ -46,7 +46,8 @@ export const useAuthStore = create<AuthState>()(
 
       login: async (email, password) => {
         set({ isLoading: true });
-        const secure = process.env.NODE_ENV === "production";
+        // const secure = process.env.NODE_ENV === "production";
+        const secure = typeof window !== "undefined" && window.location.protocol === "https:";
         try {
           const { data } = await api.post("/auth/login/", { email, password });
           const { tokens, user } = data.data;

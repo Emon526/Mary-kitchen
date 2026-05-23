@@ -58,12 +58,12 @@ export default function ContactPage() {
       ];
 
   const cards: ContactCard[] = store
-    ? [
-        store.address && { icon: MapPin, label: "Our Store", value: addressValue },
-        store.phone && { icon: Phone, label: "Phone", value: store.phone, href: `tel:${store.phone.replace(/[\s\-().]/g, "")}` },
-        store.email && { icon: Mail, label: "Email", value: store.email, href: `mailto:${store.email}` },
-      ].filter((c): c is ContactCard => Boolean(c))
-    : FALLBACK_CARDS;
+  ? ([
+      store.address ? { icon: MapPin, label: "Our Store", value: addressValue } : null,
+      store.phone ? { icon: Phone, label: "Phone", value: store.phone, href: `tel:${store.phone.replace(/[\s\-().]/g, "")}` } : null,
+      store.email ? { icon: Mail, label: "Email", value: store.email, href: `mailto:${store.email}` } : null,
+    ].filter(Boolean) as ContactCard[])
+  : FALLBACK_CARDS;
 
   return (
     <div className="min-h-screen bg-gray-50">
