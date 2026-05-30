@@ -1,10 +1,10 @@
 "use client";
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/utils";
-import { ShoppingCart, DollarSign, TrendingUp, AlertTriangle, ReceiptText, Percent, RotateCcw, Package } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { useQuery } from "@tanstack/react-query";
+import { AlertTriangle, DollarSign, Package, Percent, ReceiptText, RotateCcw, ShoppingCart, TrendingUp } from "lucide-react";
+import { useState } from "react";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 type AdminStats = {
   revenue: number;
